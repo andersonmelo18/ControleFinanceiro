@@ -6,6 +6,7 @@ const DINHEIRO_PIX_IDS = ['💵 Dinheiro', '📲 PIX'];
 const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
 // Path de Armazenamento BASE (será concatenado com o UID do usuário)
+// IMPORTANTE: 'db' (Realtime Database) deve ser inicializado no seu index.html
 const FIREBASE_BASE_PATH = 'data/'; 
 
 // listas usadas nos selects
@@ -24,11 +25,11 @@ const LISTAS = {
     { value: 'Combustível', label: '⛽ Combustível' },
     { value: 'Alimentação', label: '🍔 Alimentação' },
     { value: 'Manutenção Moto', label: '🛠️ Manutenção Moto' },
-  	 { value: 'Pessoal', label: '👤 Pessoal' },
-  	 { value: 'Assinaturas', label: '🔔 Assinaturas' },
-  	 { value: 'Moradia/Aluguel', label: '🏠 Moradia/Aluguel' },
-  	 { value: 'Contas Fixas', label: '🧾 Contas Fixas' },
-  	 { value: 'Outros', label: '❓ Outros' }
+     { value: 'Pessoal', label: '👤 Pessoal' },
+     { value: 'Assinaturas', label: '🔔 Assinaturas' },
+     { value: 'Moradia/Aluguel', label: '🏠 Moradia/Aluguel' },
+     { value: 'Contas Fixas', label: '🧾 Contas Fixas' },
+     { value: 'Outros', label: '❓ Outros' }
   ]
 };
 
@@ -59,14 +60,14 @@ function formatMonthKey(date) {
 
 // Funções de referência do Firebase (USAM O ID DO USUÁRIO)
 function getDataRef(type, monthKey = currentMonthKey) {
-  if (!currentUserId) return null; // VERIFICA SE ESTÁ LOGADO
-  // Caminho: data/[UID]/[MÊS]/[TIPO]
+  if (!currentUserId || !window.db) return null; 
+  // Caminho: data/[UID]/[MÊS]/[TIPO]
   return db.ref(`${FIREBASE_BASE_PATH}${currentUserId}/${monthKey}/${type}`);
 }
 
 function getMasterRef(type) {
-  if (!currentUserId) return null; // VERIFICA SE ESTÁ LOGADO
-  // Caminho: data/[UID]/master_[TIPO]
+  if (!currentUserId || !window.db) return null; 
+  // Caminho: data/[UID]/master_[TIPO]
   return db.ref(`${FIREBASE_BASE_PATH}${currentUserId}/master_${type}`);
 }
 
@@ -77,21 +78,21 @@ const toArray = (data) => data && typeof data === 'object' && !Array.isArray(dat
 
 // A função LoadData agora é ASYNC
 async function loadData() {
-  if (!currentUserId) return; // Sai se não estiver logado
+  if (!currentUserId) return; // Sai se não estiver logado
 
   currentMonthKey = formatMonthKey(currentMonthDate);
 
   // --- Funções de leitura ---
   const readMonthData = async (type) => {
-    const ref = getDataRef(type);
-    if (!ref) return null; // Sai se a referência for nula (sem UID)
+    const ref = getDataRef(type);
+    if (!ref) return null; // Sai se a referência for nula (sem UID)
     const snapshot = await ref.once('value');
     return snapshot.val() || (type === 'cards' ? {} : (type === 'meta' ? {} : []));
   };
   
   const readMasterData = async (type) => {
-    const ref = getMasterRef(type);
-    if (!ref) return null; // Sai se a referência for nula (sem UID)
+    const ref = getMasterRef(type);
+    if (!ref) return null; // Sai se a referência for nula (sem UID)
     const snapshot = await ref.once('value');
     return snapshot.val() || {};
   };
@@ -137,25 +138,25 @@ async function loadData() {
     const prevMonthDate = new Date(currentMonthDate);
     prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
     const prevKey = formatMonthKey(prevMonthDate);
-    
-    // Leitura do meta (closingCash) do mês anterior usando o UID
-    const prevMetaSnapshot = await db.ref(`${FIREBASE_BASE_PATH}${currentUserId}/${prevKey}/meta`).once('value');
+    
+    // Leitura do meta (closingCash) do mês anterior usando o UID
+    const prevMetaSnapshot = await db.ref(`${FIREBASE_BASE_PATH}${currentUserId}/${prevKey}/meta`).once('value');
     const prevMeta = prevMetaSnapshot.val() || null;
     
     cardMonthlyData.startingCash = prevMeta?.closingCash || 0;
   }
 
   if (cardMonthlyData.closingCash === undefined) cardMonthlyData.closingCash = 0;
-  
-  // CHAMA AS FUNÇÕES DE RENDERIZAÇÃO
-  projectExpensesForMonth();
-  renderLogs();
-  calculateSummary();
+  
+  // CHAMA AS FUNÇÕES DE RENDERIZAÇÃO
+  projectExpensesForMonth();
+  renderLogs();
+  calculateSummary();
 }
 
 // A função saveData salva no Firebase
 function saveData() {
-  if (!currentUserId) return; // Sai se não estiver logado
+  if (!currentUserId) return; // Sai se não estiver logado
 
   // Salva os dados do mês atual
   getDataRef('entries').set(entries);
@@ -174,99 +175,116 @@ function saveData() {
 // -------------------- Autenticação (NOVAS FUNÇÕES) --------------------
 
 function renderAuthControls(loggedIn) {
-    const authSection = document.getElementById('auth-section');
-    const authOverlay = document.getElementById('auth-overlay');
-    const appContainer = document.querySelector('.container');
+    const authSection = document.getElementById('auth-section');
+    const authOverlay = document.getElementById('auth-overlay');
+    const appContainer = document.querySelector('.container');
+    const navTabs = document.querySelector('.nav-tabs'); // Para remover/adicionar o botão Sair
 
-    if (!authSection || !authOverlay || !appContainer) return;
+    if (!authSection || !authOverlay || !appContainer) return;
 
-    if (loggedIn) {
-        // Logado: Oculta overlay, mostra aplicação
-        authOverlay.style.display = 'none';
-        appContainer.style.display = 'block';
-        
-        // Adiciona botão de logout na área de navegação se desejar
-        // Por enquanto, apenas garante que a tela principal está visível.
-    } else {
-        // Deslogado: Mostra overlay, oculta aplicação
-        appOverlay.style.display = 'flex'; 
-        appContainer.style.display = 'none';
-        
-        authSection.innerHTML = `
-            <h2>Controle Financeiro</h2>
-            <p>Faça login para acessar seus dados.</p>
-            <form id="login-form" onsubmit="event.preventDefault(); handleLogin()">
-                <input type="email" id="auth-email" placeholder="E-mail" required style="width: 100%; margin: 5px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
-                <input type="password" id="auth-password" placeholder="Senha" required style="width: 100%; margin: 5px 0 10px; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
-                <button type="submit" class="submit-btn" style="width: 100%; margin-bottom: 5px;">Entrar</button>
-                <button type="button" onclick="handleLogin(true)" class="submit-btn" style="width: 100%; background-color: var(--cor-principal);">Criar Conta</button>
-            </form>
-            <p id="auth-message" style="color: var(--cor-erro); margin-top: 10px; text-align: center;"></p>
-        `;
-        // Adiciona botão de logout no painel para facilitar
-        const navTabs = document.querySelector('.nav-tabs');
-        if (navTabs) navTabs.innerHTML += `<button onclick="handleLogout()" class="tab-button" style="margin-left: auto;">🚪 Sair</button>`;
-    }
+    if (loggedIn) {
+        // Logado: Oculta overlay, mostra aplicação
+        authOverlay.style.display = 'none';
+        appContainer.style.display = 'block';
+        
+        // Adiciona botão de logout na área de navegação (limpa antes)
+        navTabs.querySelectorAll('.logout-btn').forEach(btn => btn.remove());
+        const logoutButton = document.createElement('button');
+        logoutButton.classList.add('tab-button', 'logout-btn');
+        logoutButton.style.marginLeft = 'auto';
+        logoutButton.textContent = '🚪 Sair';
+        logoutButton.onclick = handleLogout;
+        navTabs.appendChild(logoutButton);
+
+
+    } else {
+        // Deslogado: Mostra overlay, oculta aplicação
+        authOverlay.style.display = 'flex'; // CORRIGIDO: Era 'appOverlay'
+        appContainer.style.display = 'none';
+        
+        // Remove botão de logout (se existir)
+        if (navTabs) navTabs.querySelectorAll('.logout-btn').forEach(btn => btn.remove());
+        
+        authSection.innerHTML = `
+            <h2>Controle Financeiro</h2>
+            <p>Faça login ou crie sua conta.</p>
+            <form id="login-form" onsubmit="event.preventDefault(); handleLogin()">
+                <input type="email" id="auth-email" placeholder="E-mail" required style="width: 100%; margin: 5px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                <input type="password" id="auth-password" placeholder="Senha" required style="width: 100%; margin: 5px 0 10px; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                <button type="submit" class="submit-btn" style="width: 100%; margin-bottom: 5px;">Entrar</button>
+                <button type="button" onclick="handleLogin(true)" class="submit-btn" style="width: 100%; background-color: var(--cor-principal);">Criar Conta</button>
+            </form>
+            <p id="auth-message" style="color: var(--cor-erro); margin-top: 10px; text-align: center;"></p>
+        `;
+    }
 }
 
 async function handleLogin(isSignUp = false) {
-    const email = document.getElementById('auth-email').value;
-    const password = document.getElementById('auth-password').value;
-    const msg = document.getElementById('auth-message');
-    msg.textContent = 'Processando...';
+    const email = document.getElementById('auth-email').value;
+    const password = document.getElementById('auth-password').value;
+    const msg = document.getElementById('auth-message');
+    msg.textContent = 'Processando...';
 
-    try {
-        if (isSignUp) {
-            await firebase.auth().createUserWithEmailAndPassword(email, password);
-            msg.textContent = 'Conta criada! Entrando...';
-        } else {
-            await firebase.auth().signInWithEmailAndPassword(email, password);
-            msg.textContent = 'Login realizado com sucesso!';
-        }
-        // O listener de estado cuidará do resto (loadData)
-    } catch (error) {
-        console.error("Erro de Autenticação:", error.code, error.message);
-        let errorMsg = error.message;
-        if (error.code === 'auth/wrong-password') errorMsg = 'Senha incorreta.';
-        if (error.code === 'auth/user-not-found') errorMsg = 'Usuário não encontrado.';
-        if (error.code === 'auth/email-already-in-use') errorMsg = 'E-mail já cadastrado.';
-        
-        msg.textContent = `Erro: ${errorMsg}`;
-    }
+    try {
+        if (isSignUp) {
+            await firebase.auth().createUserWithEmailAndPassword(email, password);
+            msg.textContent = 'Conta criada! Entrando...';
+        } else {
+            await firebase.auth().signInWithEmailAndPassword(email, password);
+            msg.textContent = 'Login realizado com sucesso!';
+        }
+        // O listener de estado cuidará do resto (loadData)
+    } catch (error) {
+        console.error("Erro de Autenticação:", error.code, error.message);
+        let errorMsg = error.message;
+        if (error.code === 'auth/wrong-password') errorMsg = 'Senha incorreta.';
+        if (error.code === 'auth/user-not-found') errorMsg = 'Usuário não encontrado.';
+        if (error.code === 'auth/email-already-in-use') errorMsg = 'E-mail já cadastrado.';
+        
+        msg.textContent = `Erro: ${errorMsg}`;
+    }
 }
 
 function handleLogout() {
-    firebase.auth().signOut().then(() => {
-        // O listener de estado cuidará de renderizar a tela de login
-        alert("Sessão encerrada.");
-    }).catch((error) => {
-        console.error("Erro ao sair:", error);
-    });
+    firebase.auth().signOut().then(() => {
+        // O listener de estado cuidará de renderizar a tela de login
+        // alert("Sessão encerrada."); // Removido para fluxo mais limpo
+    }).catch((error) => {
+        console.error("Erro ao sair:", error);
+    });
 }
 
 function setupAuthStateListener() {
-    firebase.auth().onAuthStateChanged(async (user) => {
-        if (user) {
-            // Usuário logado
-            currentUserId = user.uid;
-            renderAuthControls(true); // Renderiza a aplicação
-            updateMonthDisplay();
-            await loadData(); // Carrega os dados do Firebase para o UID
-        } else {
-            // Usuário deslogado
-            currentUserId = null;
-            renderAuthControls(false); // Renderiza a tela de login
-            // Limpa o estado local para evitar exibição de dados antigos
-            entries = []; expenses = []; fixedExpenses = []; masterPlans = {};
-            calculateSummary();
-        }
-    });
+    // Verifica se o SDK do Firebase foi carregado
+    if (!window.firebase || !firebase.auth) {
+        console.error("Firebase Auth SDK não carregado.");
+        return;
+    }
+
+    firebase.auth().onAuthStateChanged(async (user) => {
+        if (user) {
+            // Usuário logado
+            currentUserId = user.uid;
+            renderAuthControls(true); // Renderiza a aplicação
+            updateMonthDisplay();
+            await loadData(); // Carrega os dados do Firebase para o UID
+        } else {
+            // Usuário deslogado
+            currentUserId = null;
+            renderAuthControls(false); // Renderiza a tela de login
+            // Limpa o estado local para evitar exibição de dados antigos
+            entries = []; expenses = []; fixedExpenses = []; masterPlans = {};
+            // Limpa a interface
+            calculateSummary();
+            renderLogs();
+        }
+    });
 }
 
 
 // -------------------- Projeção de fixos/parcelados --------------------
 function projectExpensesForMonth() {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
+    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
   // se o usuário já adicionou fixos para o mês, não sobrescrever
   if (fixedExpenses.length > 0) return;
 
@@ -315,9 +333,8 @@ function projectExpensesForMonth() {
 
 // -------------------- Cartões --------------------
 function renderCardControls() {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
-
-// ... (restante da lógica de renderCardControls - NÃO MUDOU) ...
+    // Não precisa de currentUserId aqui para que a tela zere quando desloga
+    // ... (restante da lógica de renderCardControls - NÃO MUDOU) ...
 
   const container = document.getElementById('card-list');
   if (!container) return;
@@ -334,7 +351,7 @@ function renderCardControls() {
     cardItem.classList.add('card-item');
     cardItem.innerHTML = `
       <span>${id} (Fatura)</span>
-      <input type="number" class="card-initial-input" data-card-id="${id}" step="0.01" value="${initialBalance.toFixed(2)}" placeholder="Saldo Inicial">
+      <input type="number" class="card-initial-input" data-card-id="${id}" step="0.01" value="${initialBalance.toFixed(2)}" placeholder="Saldo Inicial" ${currentUserId ? '' : 'disabled'}>
       <span>+ ${formatBRL(totalExpenses)} (Gastos Mês)</span>
       <span class="card-fatura-total">${formatBRL(totalFatura)}</span>
     `;
@@ -343,10 +360,13 @@ function renderCardControls() {
 
   const totalFaturasDisplay = document.getElementById('total-faturas-display');
   if (totalFaturasDisplay) totalFaturasDisplay.textContent = formatBRL(totalFaturas);
+  
+  const saveBtn = document.getElementById('save-card-balances-btn');
+  if(saveBtn) saveBtn.disabled = !currentUserId;
 }
 
 function saveCardInitialBalances() {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
+    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
 // ... (restante da lógica de saveCardInitialBalances - NÃO MUDOU) ...
 
   const inputs = document.querySelectorAll('.card-initial-input');
@@ -362,10 +382,8 @@ function saveCardInitialBalances() {
 
 // -------------------- Cálculos & Resumo --------------------
 function calculateSummary() {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
-
-// ... (restante da lógica de calculateSummary - NÃO MUDOU) ...
-
+    // Não exige currentUserId para rodar, permitindo limpar a interface no logout
+    
   let totalEntradas = 0;
   let totalKm = 0;
   let totalHours = 0;
@@ -373,19 +391,80 @@ function calculateSummary() {
   let totalDespesasCartao = 0;
   let totalDespesasFixas = 0;
 
-// ... (restante da lógica de calculateSummary - NÃO MUDOU) ...
-
+    // Se deslogado, zera o dashboard
+    if (!currentUserId) {
+        cardMonthlyData.startingCash = 0;
+        cardMonthlyData.closingCash = 0;
+    }
+    
   // reset card monthly expenses
   cardMonthlyData.monthlyExpenses = {};
   CARTAO_IDS.forEach(id => cardMonthlyData.monthlyExpenses[id] = 0);
 
-// ... (restante da lógica de calculateSummary - NÃO MUDOU) ...
-// ... (renderização no dashboard) ...
-// ... (atualizar cartões e salvar) ...
+  // Processa dados apenas se estiver logado
+  if(currentUserId) {
+        entries.forEach(e => {
+          totalEntradas += e.value;
+          totalKm += e.km || 0;
+          totalHours += e.hours || 0;
+        });
 
-  // atualizar cartões e salvar
+        expenses.forEach(e => {
+          if (DINHEIRO_PIX_IDS.includes(e.payment)) {
+            totalDespesasDinheiroPix += e.value;
+          } else if (CARTAO_IDS.includes(e.payment)) {
+            totalDespesasCartao += e.value;
+            cardMonthlyData.monthlyExpenses[e.payment] = (cardMonthlyData.monthlyExpenses[e.payment] || 0) + e.value;
+          }
+        });
+
+        fixedExpenses.forEach(e => {
+          totalDespesasFixas += e.value;
+          if (DINHEIRO_PIX_IDS.includes(e.payment)) {
+            totalDespesasDinheiroPix += e.value;
+          } else if (CARTAO_IDS.includes(e.payment)) {
+            totalDespesasCartao += e.value;
+            cardMonthlyData.monthlyExpenses[e.payment] = (cardMonthlyData.monthlyExpenses[e.payment] || 0) + e.value;
+          }
+        });
+  }
+
+
+  const totalDespesasGeral = totalDespesasDinheiroPix + totalDespesasCartao;
+  const totalDespesasVariaveis = totalDespesasGeral - totalDespesasFixas;
+  const lucroLiquido = totalEntradas - totalDespesasGeral;
+
+  // carryover: startingCash (saldo carregado do mês anterior)
+  const startingCash = cardMonthlyData.startingCash || 0;
+  const saldoEmCaixa = startingCash + totalEntradas - totalDespesasDinheiroPix;
+
+  // salvar closingCash do mês atual para o próximo mês ler
+  cardMonthlyData.closingCash = saldoEmCaixa;
+
+  // render no dashboard (se existir)
+  const elTotalEntradas = document.querySelector('#total-entradas .value');
+  const elTotalDespesas = document.querySelector('#total-despesas .value');
+  const elLucro = document.querySelector('#lucro-liquido .value');
+  const elSaldo = document.querySelector('#saldo-caixa .value');
+  const elSaldoSmall = document.querySelector('#saldo-caixa .small');
+  const elKm = document.getElementById('total-km');
+  const elHours = document.getElementById('total-hours');
+  const elVarExp = document.getElementById('var-exp-value');
+  const elFixExp = document.getElementById('fix-exp-value');
+
+  if (elTotalEntradas) elTotalEntradas.textContent = formatBRL(totalEntradas);
+  if (elTotalDespesas) elTotalDespesas.textContent = formatBRL(totalDespesasGeral);
+  if (elLucro) elLucro.textContent = formatBRL(lucroLiquido);
+  if (elSaldo) elSaldo.textContent = formatBRL(saldoEmCaixa);
+  if (elSaldoSmall) elSaldoSmall.textContent = `(+${formatBRL(startingCash)} saldo do mês anterior)`;
+  if (elKm) elKm.textContent = `${totalKm.toFixed(0)} km`;
+  if (elHours) elHours.textContent = `${totalHours.toFixed(1)} h`;
+  if (elVarExp) elVarExp.textContent = formatBRL(totalDespesasVariaveis);
+  if (elFixExp) elFixExp.textContent = formatBRL(totalDespesasFixas);
+
+  // atualizar cartões e salvar (apenas se logado)
   renderCardControls();
-  saveData();
+  if (currentUserId) saveData();
 
   // atualizar tabela resumo e gráficos
   renderSummaryTable();
@@ -394,7 +473,7 @@ function calculateSummary() {
 
 // -------------------- Inserção de dados --------------------
 function removeLogItem(id, type) {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
+    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
 // ... (restante da lógica de removeLogItem - NÃO MUDOU) ...
 
   if (!confirm('Tem certeza que deseja remover este item?')) return;
@@ -422,7 +501,7 @@ function toggleRecurrenceForm(recurrenceType) {
 }
 
 function handleFixedExpenseSubmit(e) {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
+    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
 // ... (restante da lógica de handleFixedExpenseSubmit - NÃO MUDOU) ...
 
   if (e) e.preventDefault();
@@ -442,7 +521,7 @@ function handleFixedExpenseSubmit(e) {
 }
 
 function editFixedExpenseValue(id, currentValue) {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
+    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
 // ... (restante da lógica de editFixedExpenseValue - NÃO MUDOU) ...
 
   const newValue = prompt('Editar valor da despesa para o mês atual (R$):', (currentValue || 0).toFixed(2));
@@ -465,7 +544,7 @@ function editFixedExpenseValue(id, currentValue) {
 }
 
 function handleEntrySubmit(e) {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
+    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
 // ... (restante da lógica de handleEntrySubmit - NÃO MUDOU) ...
 
   if (e) e.preventDefault();
@@ -485,7 +564,7 @@ function handleEntrySubmit(e) {
 }
 
 function handleExpenseSubmit(e) {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
+    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
 // ... (restante da lógica de handleExpenseSubmit - NÃO MUDOU) ...
 
   if (e) e.preventDefault();
@@ -503,8 +582,8 @@ function handleExpenseSubmit(e) {
 
 // -------------------- Render logs / tabelas --------------------
 function renderLogs() {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
-
+    // Não exige currentUserId para rodar, permitindo limpar a interface no logout
+    
 // ... (restante da lógica de renderLogs - NÃO MUDOU) ...
   // atualizar display do mês na aba fixos
 // ...
@@ -521,19 +600,33 @@ function updateMonthDisplay() {
 
 // ATENÇÃO: Função ASYNC para atualizar parcelas no Firebase
 async function updateMasterPlansForPreviousMonth(prevMonthKey) {
-  if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
+  if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
 
   // Carrega os dados fixos do mês anterior para verificar o que foi pago
   const prevFixedRef = db.ref(`${FIREBASE_BASE_PATH}${currentUserId}/${prevMonthKey}/fixedExpenses`); // Caminho alterado
   const prevFixedSnapshot = await prevFixedRef.once('value');
-  const prevMonthData = prevFixedSnapshot.val() || {};
-  
+  const prevMonthData = toArray(prevFixedSnapshot.val() || {}); // Usa toArray para converter de objeto para array
+
   // Carrega o plano mestre global para atualizar
   const masterPlansRef = getMasterRef('plans');
   const masterPlansSnapshot = await masterPlansRef.once('value');
   let masterPlansToUpdate = masterPlansSnapshot.val() || {};
 
-// ... (restante da lógica de updateMasterPlansForPreviousMonth - NÃO MUDOU) ...
+  for (const plan of Object.values(masterPlansToUpdate)) {
+    if (plan.recurrence === 'Parcelada') {
+      // Verifica se a parcela (que NÃO É projetada) foi paga no mês anterior
+      const wasPaid = prevMonthData.some(expense => 
+          expense.masterId === plan.id && 
+          !expense.isProjected // Garante que a entrada não foi apenas uma projeção
+      );
+
+      if (wasPaid) {
+        // Se foi paga, avança a contagem de parcelas
+        plan.paidInstallments = Math.min(plan.totalInstallments, plan.paidInstallments + 1);
+      }
+    }
+  }
+  
   // Salva a atualização no Firebase
   masterPlansRef.set(masterPlansToUpdate);
   // Atualiza a variável global também
@@ -542,7 +635,7 @@ async function updateMasterPlansForPreviousMonth(prevMonthKey) {
 
 // ATENÇÃO: Função ASYNC para navegação entre meses
 async function changeMonth(delta) {
-  if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
+  if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
   // Antes de mudar, atualiza status de parcelas do mês atual
   await updateMasterPlansForPreviousMonth(currentMonthKey);
 
@@ -557,15 +650,14 @@ async function changeMonth(delta) {
 
 // -------------------- Resumo tabela --------------------
 function renderSummaryTable() {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
-
+    // Não exige currentUserId para rodar, permitindo limpar a interface no logout
 // ... (restante da lógica de renderSummaryTable - NÃO MUDOU) ...
 // ...
 }
 
 // -------------------- Gráficos (Chart.js) --------------------
 function renderCharts() {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
+    // Não exige currentUserId para rodar, permitindo limpar a interface no logout
 
 // ... (restante da lógica de renderCharts - NÃO MUDOU) ...
 // ...
@@ -573,14 +665,14 @@ function renderCharts() {
 
 // -------------------- Export CSV / PDF --------------------
 function exportMonthCSV() {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
+    if (!currentUserId) return alert('Faça login para exportar dados.'); // VERIFICA SE ESTÁ LOGADO
 
 // ... (restante da lógica de exportMonthCSV - NÃO MUDOU) ...
 // ...
 }
 
 function exportMonthPDF() {
-    if (!currentUserId) return; // VERIFICA SE ESTÁ LOGADO
+    if (!currentUserId) return alert('Faça login para exportar dados.'); // VERIFICA SE ESTÁ LOGADO
 
 // ... (restante da lógica de exportMonthPDF - NÃO MUDOU) ...
 // ...
@@ -592,7 +684,12 @@ function populateSelect(elementId, options) {
   const s = document.getElementById(elementId);
   if (!s) return;
   s.innerHTML = '<option value="">Selecione...</option>';
-// ...
+  options.forEach(opt => {
+    const option = document.createElement('option');
+    option.value = opt.value;
+    option.textContent = opt.label;
+    s.appendChild(option);
+  });
 }
 
 // ATENÇÃO: initApp agora APENAS configura listeners e o AuthStateListener
@@ -618,7 +715,7 @@ async function initApp() {
   const exportCsvBtn = document.getElementById('export-csv-btn'); if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportMonthCSV);
   const exportPdfBtn = document.getElementById('export-pdf-btn'); if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportMonthPDF);
 
-  // expor funções para onclick inline (INCLUINDO AS NOVAS DE AUTH)
+  // expor funções para onclick inline
   window.openTab = openTab;
   window.changeMonth = changeMonth;
   window.saveCardInitialBalances = saveCardInitialBalances;
@@ -628,12 +725,12 @@ async function initApp() {
   window.exportMonthCSV = exportMonthCSV;
   window.exportMonthPDF = exportMonthPDF;
   window.calculateSummary = calculateSummary;
-  // FUNÇÕES DE AUTH
-  window.handleLogin = handleLogin;
-  window.handleLogout = handleLogout;
-
-  // ESTABELECE O MONITORAMENTO DE AUTENTICAÇÃO (Inicia o processo)
-  setupAuthStateListener();
+  // FUNÇÕES DE AUTH
+  window.handleLogin = handleLogin;
+  window.handleLogout = handleLogout;
+  
+  // ESTABELECE O MONITORAMENTO DE AUTENTICAÇÃO (Inicia o processo)
+  setupAuthStateListener();
 }
 
 // executar init quando DOM pronto
