@@ -10,45 +10,56 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
-        // Importa o SDK modular do Firestore (versão 11.6.1, conforme seu script.js)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        
+        // Configurações e Variáveis Globais
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { projectId: 'default-project-id' };
+        window.__app_id = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-        // Configuração de fallback/obrigatória (usando o config original do usuário)
-        const FALLBACK_CONFIG = {
-            apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
-            authDomain: "controle-financeiro-b7880.firebaseapp.com",
-            databaseURL: "https://controle-financeiro-b7880-default-rtdb.firebaseio.com",
-            projectId: "controle-financeiro-b7880",
-            storageBucket: "controle-financeiro-b7880.firebasestorage.app",
-            messagingSenderId: "149823899793",
-            appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
-        };
-
-        let finalConfig = FALLBACK_CONFIG;
-
-        // TENTA USAR A CONFIGURAÇÃO DO AMBIENTE, SENÃO USA O FALLBACK (Garante projectId)
-        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+        // 1. Inicializa o App
+        const app = initializeApp(firebaseConfig);
+        window.db = getFirestore(app);
+        window.auth = getAuth(app);
+        
+        // 2. Função de Autenticação
+        async function authenticateUser() {
             try {
-                const envConfig = JSON.parse(__firebase_config);
-                finalConfig = { ...FALLBACK_CONFIG, ...envConfig };
-            } catch (e) {
-                console.warn("Erro ao parsear __firebase_config. Usando FALLBACK_CONFIG.");
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(window.auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(window.auth);
+                }
+                // 3. Define o userId após o sucesso do login
+                window.userId = window.auth.currentUser.uid;
+                console.log("Firebase Auth e Firestore inicializados. User ID:", window.userId);
+                
+                // 4. Inicia a lógica principal do app
+                if (window.initApp) {
+                    window.initApp();
+                }
+            } catch (error) {
+                console.error("Erro ao autenticar no Firebase. Usando ID anônimo fallback.", error);
+                window.userId = 'anon-user-fallback-' + crypto.randomUUID(); 
+                if (window.initApp) {
+                    window.initApp();
+                }
             }
         }
 
-        try {
-            // Inicializa o App
-            const app = initializeApp(finalConfig);
-            // Inicializa o Firestore e expõe 'db' globalmente
-            window.db = getFirestore(app);
-            window.__app_id = finalConfig.appId;
-            // Define um ID de usuário mockado, pois o app não tem Auth
-            window.currentUserId = 'demo-user-123'; 
-            console.log("Firebase Firestore inicializado.");
-        } catch (error) {
-            console.error("Erro ao inicializar o Firebase Firestore. Verifique a configuração.", error);
-        }
+        // 5. Ouve o estado de autenticação para iniciar o app
+        onAuthStateChanged(window.auth, (user) => {
+            if (user) {
+                window.userId = user.uid;
+                if (window.initApp) window.initApp();
+            } else if (!window.userId) {
+                authenticateUser();
+            }
+        });
+
+        // Tenta autenticar no load inicial
+        authenticateUser();
     </script>
 </head>
 <body>
@@ -63,9 +74,9 @@
 
         <div id="dashboard-tab" class="tab-content" style="display:block">
             <div class="month-selector">
-                <button onclick="changeMonth(-1)">&#9664;</button>
+                <button id="prev-month-btn">&#9664;</button>
                 <h2 id="current-month-display"></h2>
-                <button onclick="changeMonth(1)">&#9654;</button>
+                <button id="next-month-btn">&#9654;</button>
             </div>
 
             <div class="dashboard-grid">

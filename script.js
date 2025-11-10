@@ -1,41 +1,22 @@
-/* script.js - LÓGICA DE CONTROLE FINANCEIRO */
+import { 
+    collection, addDoc, onSnapshot, query, where, doc, deleteDoc, updateDoc, 
+    getDocs, getDoc, runTransaction, setDoc 
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// -------------------- Config / constantes --------------------
-// IDs de meios de pagamento
+// -------------------- Config / Constantes --------------------
 const CARTAO_IDS = ['💳 Cartão 1', '💳 Cartão 2', '💳 Cartão 3'];
 const DINHEIRO_PIX_IDS = ['💵 Dinheiro', '📲 PIX'];
 const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
-// Variáveis globais de controle
-let currentMonth, currentYear;
-let isFirstLoad = true; // Para prevenir carregamentos múltiplos iniciais
-let myDoughnutChart, myBarChart;
-let globalData = {
-  entries: [],
-  expenses: [],
-  fixedExpenses: [],
-  cards: {}
+// Coleções
+const COLLECTIONS = {
+    ENTRIES: 'entries',
+    EXPENSES: 'expenses',
+    FIXED: 'fixed',
+    CARDS: 'cards_initial_balance'
 };
 
-// Firestore imports (via window.db e window.auth definidos no HTML)
-import { 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
-  onSnapshot, 
-  addDoc, 
-  deleteDoc, 
-  doc, 
-  updateDoc, 
-  getDoc 
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-// Variáveis para Firestore (serão definidas após a autenticação)
-let db, auth;
-let appId;
-
-// listas usadas nos selects
+// Listas usadas nos selects
 const LISTAS = {
   plataformas: [
     { value: '🏍️ Uber Moto', label: '🏍️ Uber Moto' },
@@ -50,1077 +31,839 @@ const LISTAS = {
   categorias: [
     { value: 'Combustível', label: '⛽ Combustível' },
     { value: 'Alimentação', label: '🍔 Alimentação' },
-    { value: 'Manutenção', label: '🛠️ Manutenção (Moto)' },
-    { value: 'Pessoal', label: '👤 Despesas Pessoais' },
-    { value: 'Casa', label: '🏠 Casa' },
-    { value: 'Outros', label: '📦 Outros' }
+    { value: 'Manutenção Veículo', label: '🔧 Manutenção Veículo' },
+    { value: 'Pessoal', label: '🧑‍🤝‍🧑 Pessoal' },
+    { value: 'Moradia', label: '🏠 Moradia' },
+    { value: 'Outros', label: '💸 Outros' }
   ]
 };
 
-// -------------------- Funções de Utilitários --------------------
+// Variáveis de Estado (Para o Mês Atual)
+let currentMonth = new Date().getMonth();
+let currentYear = new Date().getFullYear();
+
+// Cache de Dados
+let allEntries = [];
+let allExpenses = [];
+let allFixed = [];
+let cardBalances = {};
+
+
+// -------------------- Funções de Apoio --------------------
 
 /**
- * Formata um número para a moeda brasileira (R$).
- * @param {number} value
- * @returns {string}
- */
-function formatCurrency(value) {
-  return (value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-/**
- * Normaliza uma data para o formato YYYY-MM-DD.
- * @param {Date | string} date
- * @returns {string}
- */
-function formatDate(date) {
-    if (typeof date === 'string') date = new Date(date + 'T00:00:00'); 
-    return date.toISOString().split('T')[0];
-}
-
-/**
- * Obtém o nome da coleção no Firestore.
- * @param {string} collectionName
- * @returns {string}
+ * Constrói o caminho completo da coleção no Firestore.
+ * /artifacts/{appId}/users/{userId}/{collectionName}
  */
 function getCollectionPath(collectionName) {
-    const userId = window.currentUserId || 'anonymous';
-    // Padrão: /artifacts/{appId}/users/{userId}/{collectionName}
-    return `artifacts/${appId}/users/${userId}/${collectionName}`;
-}
-
-/**
- * Cria a referência para os dados mensais.
- * @param {string} collectionName
- * @param {string} monthKey - Chave do mês (YYYY-MM)
- * @returns {import('firebase/firestore').CollectionReference}
- */
-function getDataRef(collectionName, monthKey) {
-    if (!db) {
-        console.error("Erro: 'db' não está definido. Verifique a inicialização do Firebase no index.html.");
+    if (!window.userId || !window.__app_id) {
+        console.error("IDs de App/Usuário não definidos.");
         return null;
     }
-    const path = getCollectionPath(collectionName);
-    // Para coleções de log, adicionamos o mês como subcoleção ou como filtro
-    // Aqui usaremos o filtro para manter a estrutura do app (ex: entries/123, expenses/456)
-    return collection(db, path);
+    return `artifacts/${window.__app_id}/users/${window.userId}/${collectionName}`;
 }
 
-// -------------------- Funções de Inicialização de UI --------------------
+/**
+ * Formata um número para o formato de moeda Real (R$).
+ */
+function formatCurrency(value) {
+    return (value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
 
 /**
- * Popula os elementos <select> com os dados das LISTAS.
+ * Retorna o mês/ano atual como string para consulta.
  */
-function populateSelects() {
-  const selects = [
-    { id: 'entry-platform', data: LISTAS.plataformas },
-    { id: 'expense-category', data: LISTAS.categorias },
-    { id: 'fixed-expense-category', data: LISTAS.categorias },
-    { id: 'expense-payment', data: LISTAS.pagamentos },
-    { id: 'fixed-expense-payment', data: LISTAS.pagamentos },
-  ];
+function getCurrentMonthKey() {
+    return `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+}
 
-  selects.forEach(({ id, data }) => {
-    const selectElement = document.getElementById(id);
-    if (selectElement) {
-      selectElement.innerHTML = ''; // Limpar antes de popular
-      data.forEach(item => {
-        const option = document.createElement('option');
-        option.value = item.value;
-        option.textContent = item.label;
-        selectElement.appendChild(option);
-      });
+/**
+ * Retorna uma string legível para exibição.
+ */
+function getCurrentMonthDisplay() {
+    return `${MESES_PT[currentMonth]} de ${currentYear}`;
+}
+
+
+// -------------------- Inicialização e Listeners (DOM) --------------------
+
+/**
+ * Inicializa a aplicação (Chamado após autenticação do Firebase)
+ */
+window.initApp = function() {
+    console.log("Iniciando a lógica principal da aplicação...");
+
+    // 1. Carregar options dos Selects em todas as páginas
+    loadOptions();
+
+    // 2. Configura os Listeners do Firestore
+    setupFirestoreListeners();
+
+    // 3. Configura Listeners de Forms/Botões (AGORA SEM ONCLICK INLINE)
+    setupEventListeners();
+
+    // 4. Exibe o mês atual no seletor (se existir)
+    if (document.getElementById('current-month-display')) {
+        document.getElementById('current-month-display').textContent = getCurrentMonthDisplay();
     }
-  });
-
-  // Define a data atual como padrão nos formulários
-  const today = formatDate(new Date());
-  document.getElementById('entry-date')?.setAttribute('value', today);
-  document.getElementById('expense-date')?.setAttribute('value', today);
-}
-
-/**
- * Define o mês e ano atual, e carrega os dados.
- * @param {Date | null} date
- */
-function setMonth(date = new Date()) {
-  currentMonth = date.getMonth();
-  currentYear = date.getFullYear();
-
-  const display = document.getElementById('current-month-display');
-  if (display) {
-    display.textContent = `${MESES_PT[currentMonth]} / ${currentYear}`;
-  }
-  
-  const logDisplay = document.getElementById('current-month-log-display');
-  if (logDisplay) {
-    logDisplay.textContent = `${MESES_PT[currentMonth]} / ${currentYear}`;
-  }
-
-  loadData();
-}
-
-/**
- * Altera o mês atual de visualização/registro.
- * @param {number} delta - +1 para próximo mês, -1 para mês anterior.
- */
-window.changeMonth = function(delta) {
-  const newDate = new Date(currentYear, currentMonth + delta, 1);
-  setMonth(newDate);
-}
-
-// -------------------- Funções de Leitura de Dados (Firestore) --------------------
-
-/**
- * Lê dados de uma coleção para o mês atual.
- * @param {string} collectionName
- * @param {string} monthKey - Chave do mês (YYYY-MM)
- * @returns {Promise<Array<Object>>}
- */
-async function readMonthData(collectionName, monthKey) {
-  const colRef = getDataRef(collectionName, monthKey);
-  if (!colRef) return [];
-  
-  // Filtra por 'monthKey' (campo que deve existir nos documentos de log)
-  const q = query(colRef, where('monthKey', '==', monthKey));
-  
-  try {
-    const querySnapshot = await getDocs(q);
-    const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    return data;
-  } catch (e) {
-    console.error(`Erro ao ler dados de ${collectionName} para ${monthKey}:`, e);
-    return [];
-  }
-}
-
-/**
- * Lê os dados de um documento específico (usado para cartões).
- * @param {string} collectionName
- * @param {string} docId
- * @returns {Promise<Object>}
- */
-async function readDocData(collectionName, docId) {
-    if (!db) return {};
-    const path = getCollectionPath(collectionName);
-    const docRef = doc(db, path, docId);
-    try {
-        const docSnap = await getDoc(docRef);
-        return docSnap.exists() ? docSnap.data() : {};
-    } catch (e) {
-        console.error(`Erro ao ler documento ${docId} em ${collectionName}:`, e);
-        return {};
+    if (document.getElementById('current-month-log-display')) {
+        document.getElementById('current-month-log-display').textContent = getCurrentMonthDisplay();
     }
-}
-
-/**
- * Carrega todos os dados do mês atual.
- */
-async function loadData() {
-  if (!window.db || !window.currentUserId) {
-    // Espera a inicialização do Firebase
-    setTimeout(loadData, 50);
-    return;
-  }
-  
-  db = window.db;
-  appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-  const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
-  
-  // 1. Logs de Entradas, Despesas Variáveis e Fixas (do mês)
-  globalData.entries = await readMonthData('entries', monthKey);
-  globalData.expenses = await readMonthData('expenses', monthKey);
-  globalData.fixedExpenses = await getMonthFixedExpenses(monthKey); 
-  
-  // 2. Dados de Cartões e Saldo Inicial
-  const cardData = await readDocData('settings', 'cards');
-  globalData.cards = cardData.balances || {};
-  
-  const balanceData = await readDocData('settings', 'monthly_balances');
-  const monthBalance = balanceData[monthKey] || { initialCashBalance: 0 };
-  globalData.initialCashBalance = monthBalance.initialCashBalance || 0;
-
-
-  // 3. Atualiza UI/Cálculos
-  if (document.getElementById('entries-log-body')) {
-    renderEntriesLog();
-  } else if (document.getElementById('expenses-log-body')) {
-    renderExpensesLog();
-  } else if (document.getElementById('fixed-expenses-log-body')) {
-    renderFixedExpensesLog();
-  } else if (document.getElementById('card-list')) {
-    renderCardControls();
-  }
-  
-  calculateSummary();
-}
-
-/**
- * Obtém despesas fixas para o mês, incluindo a projeção de recorrências.
- * @param {string} monthKey
- * @returns {Promise<Array<Object>>}
- */
-async function getMonthFixedExpenses(monthKey) {
-  const fixedColRef = getDataRef('fixed_templates', monthKey);
-  if (!fixedColRef) return [];
-
-  // 1. Obtém todos os templates fixos (recorrentes ou parcelados)
-  const templateSnapshot = await getDocs(fixedColRef);
-  let templates = templateSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-  const [targetYear, targetMonth] = monthKey.split('-').map(Number);
-  let monthlyExpenses = [];
-
-  // 2. Processa cada template
-  for (const template of templates) {
-    if (template.recurrence === 'Mensal') {
-      // Despesa Mensal
-      monthlyExpenses.push({
-        ...template,
-        monthKey: monthKey,
-        currentMonthValue: template.value, // Valor padrão
-        isRecurrent: true,
-        instanceId: template.id // ID do template
-      });
-    } else if (template.recurrence === 'Parcelada') {
-      // Despesa Parcelada
-      const startMonthKey = template.monthKey; // Mês inicial da dívida
-      const [startYear, startMonth] = startMonthKey.split('-').map(Number);
-      
-      const monthDiff = (targetYear - startYear) * 12 + (targetMonth - startMonth);
-      const currentInstallment = monthDiff + 1;
-
-      if (currentInstallment > 0 && currentInstallment <= template.totalInstallments) {
-        monthlyExpenses.push({
-          ...template,
-          description: `${template.description} (${currentInstallment}/${template.totalInstallments})`,
-          monthKey: monthKey,
-          currentMonthValue: template.value, // Valor da parcela
-          isRecurrent: true,
-          installmentNumber: currentInstallment,
-          instanceId: template.id // ID do template
-        });
-      }
-    }
-  }
-
-  // 3. Obtém despesas fixas lançadas especificamente para este mês (Recorrência 'Unica' ou Edições)
-  const uniqueFixedExpenses = await readMonthData('fixed_expenses', monthKey);
-
-  // 4. Consolida: Se houver uma despesa 'fixed_expenses' (manual ou edição) para um template recorrente, usa seu valor.
-  const finalExpenses = [...monthlyExpenses];
-
-  for (const expense of uniqueFixedExpenses) {
-    if (expense.instanceId) {
-      // Se for uma edição de uma despesa recorrente, atualiza o valor
-      const index = finalExpenses.findIndex(fe => fe.instanceId === expense.instanceId && fe.installmentNumber === expense.installmentNumber);
-      if (index !== -1) {
-        finalExpenses[index].currentMonthValue = expense.value;
-        finalExpenses[index].id = expense.id; // Mantém o ID do documento de 'fixed_expenses' para exclusão
-      } else {
-         // Não deve acontecer se a lógica for bem aplicada, mas adiciona por segurança
-         finalExpenses.push({...expense, currentMonthValue: expense.value, isRecurrent: false});
-      }
-    } else {
-      // Se for uma despesa única lançada neste mês (Recorrência: 'Unica' no form 'fixos.html')
-      finalExpenses.push({...expense, currentMonthValue: expense.value, isRecurrent: false});
-    }
-  }
-
-  return finalExpenses;
-}
-
-
-// -------------------- Funções de Renderização e Cálculos --------------------
-
-/**
- * Calcula e exibe o resumo financeiro no Painel.
- */
-window.calculateSummary = function() {
-  const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
-  
-  // Totais
-  const totalEntries = globalData.entries.reduce((sum, item) => sum + (item.value || 0), 0);
-  
-  // Despesas Variáveis (cash e card)
-  const varExpenses = globalData.expenses;
-  const totalVarExpensesCash = varExpenses.filter(e => DINHEIRO_PIX_IDS.includes(e.payment)).reduce((sum, item) => sum + (item.value || 0), 0);
-  const totalVarExpensesCard = varExpenses.filter(e => CARTAO_IDS.includes(e.payment)).reduce((sum, item) => sum + (item.value || 0), 0);
-  
-  // Despesas Fixas (incluindo gasolina e outros custos de Entradas)
-  const fixedExpenses = globalData.fixedExpenses;
-  const totalFixedExpenses = fixedExpenses.reduce((sum, item) => sum + (item.currentMonthValue || 0), 0);
-  
-  // Despesas de gasolina e outros custos pagos em Dinheiro/PIX (já estão incluídos no log de Despesas Fixas se a recorrência for 'Mensal' ou 'Parcelada' e a forma de pagamento for 'Dinheiro/PIX')
-  // No entanto, as despesas de 'Gasto Gasolina' e 'Outros Gastos em Dinheiro/PIX' do formulário de 'Entradas' **não são despesas variáveis** (elas são despesas operacionais do dia) e nem fixas.
-  // Vamos incluí-las no cálculo do fluxo de caixa e total de despesas.
-  const totalOperationalCosts = globalData.entries.reduce((sum, item) => sum + (item.gas || 0) + (item.otherCosts || 0), 0);
-  
-  // Despesas totais
-  const totalExpenses = totalVarExpensesCard + totalFixedExpenses + totalOperationalCosts + totalVarExpensesCash;
-
-  // Lucro Líquido
-  const lucroLiquido = totalEntries - totalExpenses;
-  
-  // Saldo em Caixa (Dinheiro/PIX)
-  const initialBalance = globalData.initialCashBalance; // Saldo inicial do mês
-  const entriesCashFlow = totalEntries; // Todo o dinheiro que entra
-  
-  // Todo o dinheiro/PIX que sai:
-  const outflowsCashFlow = totalVarExpensesCash + totalFixedExpenses;
-  // + Despesas operacionais do dia (Gasolina/Outros custos nas Entradas)
-  // Nota: Se uma despesa fixa usa Dinheiro/PIX, ela já foi contabilizada em 'outflowsCashFlow'
-
-  const saldoCaixa = initialBalance + entriesCashFlow - outflowsCashFlow - totalOperationalCosts;
-  
-  // Total de Faturas a Pagar
-  let totalFaturasPagar = totalVarExpensesCard; // Despesas variáveis no cartão
-
-  // Adiciona as despesas fixas pagas com cartão
-  totalFaturasPagar += fixedExpenses.filter(e => CARTAO_IDS.includes(e.payment)).reduce((sum, item) => sum + (item.currentMonthValue || 0), 0);
-
-  // Exibição no Painel (index.html)
-  document.getElementById('total-entradas')?.querySelector('.value').textContent = formatCurrency(totalEntries);
-  document.getElementById('total-despesas')?.querySelector('.value').textContent = formatCurrency(totalExpenses);
-  document.getElementById('lucro-liquido')?.querySelector('.value').textContent = formatCurrency(lucroLiquido);
-  document.getElementById('saldo-caixa')?.querySelector('.value').textContent = formatCurrency(saldoCaixa);
-  document.getElementById('total-faturas-display')?.textContent = formatCurrency(totalFaturasPagar);
-
-  // Detalhamento de Despesas
-  document.getElementById('var-exp-value')?.textContent = formatCurrency(totalVarExpensesCard + totalVarExpensesCash);
-  document.getElementById('fix-exp-value')?.textContent = formatCurrency(totalFixedExpenses + totalOperationalCosts);
-  
-  // Totais Operacionais (apenas para o dashboard principal)
-  const totalKm = globalData.entries.reduce((sum, item) => sum + (item.km || 0), 0);
-  const totalHours = globalData.entries.reduce((sum, item) => sum + (item.hours || 0), 0);
-  document.getElementById('total-km')?.textContent = `${totalKm.toFixed(1)} km`;
-  document.getElementById('total-hours')?.textContent = `${totalHours.toFixed(1)} h`;
-
-  // Renderiza Gráficos
-  renderDonutChart(totalEntries, totalExpenses);
-  renderBarChart(varExpenses, fixedExpenses);
-  renderMonthlySummaryTable(totalEntries, totalExpenses, lucroLiquido, totalVarExpensesCard, totalFixedExpenses, totalOperationalCosts);
 };
 
 /**
- * Renderiza a tabela de resumo mensal.
+ * Adiciona listeners de eventos aos formulários e botões.
  */
-function renderMonthlySummaryTable(totalEntries, totalExpenses, lucroLiquido, totalVarExpensesCard, totalFixedExpenses, totalOperationalCosts) {
-    const tableContainer = document.getElementById('monthly-summary-table');
-    if (!tableContainer) return;
+function setupEventListeners() {
+    const entryForm = document.getElementById('entry-form');
+    if (entryForm) entryForm.addEventListener('submit', handleEntrySubmit);
 
-    const currentMonthData = MESES_PT[currentMonth];
+    const expenseForm = document.getElementById('expense-form');
+    if (expenseForm) expenseForm.addEventListener('submit', handleExpenseSubmit);
 
-    const data = [
-        { label: "Receita Bruta", value: totalEntries, color: 'var(--cor-sucesso)' },
-        { label: "Despesas Totais", value: totalExpenses, color: 'var(--cor-erro)' },
-        { label: "Lucro Líquido", value: lucroLiquido, color: lucroLiquido >= 0 ? 'var(--cor-sucesso)' : 'var(--cor-erro)' },
-        { label: "--- Detalhes ---", value: null, color: 'var(--cor-texto)' },
-        { label: "Despesas Variáveis (Din/Pix)", value: totalVarExpensesCard, color: 'var(--cor-erro)' },
-        { label: "Despesas Fixas & Dívidas", value: totalFixedExpenses, color: 'var(--cor-erro)' },
-        { label: "Custos Operacionais (Gas/Outros)", value: totalOperationalCosts, color: 'var(--cor-erro)' },
-    ];
-
-    let html = `<div style="font-size:14px;">`;
-    data.forEach(item => {
-        if (item.value === null) {
-            html += `<h5 style="margin-top:10px; margin-bottom:4px; color:var(--cor-primaria);">${item.label}</h5>`;
-        } else {
-            html += `<div class="card-item" style="padding:6px 0;">
-                        <span>${item.label}</span>
-                        <span style="font-weight:bold; color:${item.color}">${formatCurrency(item.value)}</span>
-                     </div>`;
-        }
-    });
-    html += `</div>`;
-    tableContainer.innerHTML = html;
-}
-
-/**
- * Renderiza o gráfico de pizza/donut para Receitas vs Despesas.
- */
-function renderDonutChart(totalEntries, totalExpenses) {
-  const ctx = document.getElementById('chart-donut');
-  if (!ctx) return;
-  
-  if (myDoughnutChart) myDoughnutChart.destroy();
-
-  const data = {
-    labels: ['Receita Total', 'Despesa Total'],
-    datasets: [{
-      data: [totalEntries, totalExpenses],
-      backgroundColor: ['var(--cor-sucesso)', 'var(--cor-erro)'],
-      hoverOffset: 4
-    }]
-  };
-
-  myDoughnutChart = new Chart(ctx, {
-    type: 'doughnut',
-    data: data,
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { labels: { color: 'var(--cor-texto)' } }
-      }
-    }
-  });
-}
-
-/**
- * Renderiza o gráfico de barras para Gastos por Categoria.
- */
-function renderBarChart(varExpenses, fixedExpenses) {
-  const ctx = document.getElementById('chart-bar');
-  if (!ctx) return;
-
-  if (myBarChart) myBarChart.destroy();
-
-  const allExpenses = [...varExpenses, ...fixedExpenses.map(f => ({ ...f, value: f.currentMonthValue }))];
-
-  const categoryTotals = allExpenses.reduce((acc, item) => {
-    const category = item.category || 'Outros';
-    const value = item.value || 0;
-    acc[category] = (acc[category] || 0) + value;
-    return acc;
-  }, {});
-
-  const labels = Object.keys(categoryTotals);
-  const dataValues = Object.values(categoryTotals);
-
-  const data = {
-    labels: labels.map(label => LISTAS.categorias.find(c => c.value === label)?.label || label),
-    datasets: [{
-      label: 'Gasto por Categoria (R$)',
-      data: dataValues,
-      backgroundColor: 'var(--cor-primaria)',
-      borderColor: 'var(--cor-primaria)',
-      borderWidth: 1
-    }]
-  };
-
-  myBarChart = new Chart(ctx, {
-    type: 'bar',
-    data: data,
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        y: { beginAtZero: true, ticks: { color: 'var(--cor-texto)' }, grid: { color: '#333' } },
-        x: { ticks: { color: 'var(--cor-texto)' }, grid: { display: false } }
-      },
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: (context) => formatCurrency(context.parsed.y) } }
-      }
-    }
-  });
-}
-
-/**
- * Renderiza o log de Entradas (entradas.html).
- */
-function renderEntriesLog() {
-  const tbody = document.getElementById('entries-log-body');
-  if (!tbody) return;
-
-  tbody.innerHTML = '';
-  globalData.entries
-    .sort((a, b) => (b.date || '').localeCompare(a.date || '')) // Ordena por data (mais recente primeiro)
-    .forEach(item => {
-      const row = tbody.insertRow();
-      row.innerHTML = `
-        <td>${formatDate(item.date)}</td>
-        <td>${item.platform}</td>
-        <td>${formatCurrency(item.value)}</td>
-        <td>${(item.km || 0).toFixed(1)} km</td>
-        <td><button onclick="removeLogItem('entries', '${item.id}')" class="delete-btn">Excluir</button></td>
-      `;
-    });
-}
-
-/**
- * Renderiza o log de Despesas Variáveis (despesas.html).
- */
-function renderExpensesLog() {
-  const tbody = document.getElementById('expenses-log-body');
-  if (!tbody) return;
-
-  tbody.innerHTML = '';
-  globalData.expenses
-    .sort((a, b) => (b.date || '').localeCompare(a.date || '')) // Ordena por data
-    .forEach(item => {
-      const row = tbody.insertRow();
-      const categoryLabel = LISTAS.categorias.find(c => c.value === item.category)?.label || item.category;
-      row.innerHTML = `
-        <td>${formatDate(item.date)}</td>
-        <td>${categoryLabel}</td>
-        <td>${formatCurrency(item.value)}</td>
-        <td>${item.payment}</td>
-        <td><button onclick="removeLogItem('expenses', '${item.id}')" class="delete-btn">Excluir</button></td>
-      `;
-    });
-}
-
-/**
- * Renderiza o log de Despesas Fixas (fixos.html).
- */
-function renderFixedExpensesLog() {
-  const tbody = document.getElementById('fixed-expenses-log-body');
-  if (!tbody) return;
-
-  tbody.innerHTML = '';
-  globalData.fixedExpenses
-    .sort((a, b) => (a.description || '').localeCompare(b.description || '')) // Ordena por descrição
-    .forEach(item => {
-      const isCard = CARTAO_IDS.includes(item.payment);
-      const isUnique = !item.isRecurrent; // Se for única (Recorrência 'Unica') ou uma instância editada
-
-      const valueCell = isUnique || item.isRecurrent
-        ? `<span class="editable-value" onclick="editFixedExpenseValue('${item.id}', '${item.instanceId}', ${item.installmentNumber})">${formatCurrency(item.currentMonthValue)}</span>`
-        : `<span>${formatCurrency(item.currentMonthValue)}</span>`;
-
-      const removeBtn = isUnique
-        ? `<button onclick="removeLogItem('fixed_expenses', '${item.id}')" class="delete-btn">Excluir</button>`
-        : `<button onclick="removeTemplateOrInstance('${item.id}', '${item.instanceId}', ${item.installmentNumber})" class="delete-btn">Remover</button>`;
-        
-      const row = tbody.insertRow();
-      row.innerHTML = `
-        <td>${item.description}</td>
-        <td>${valueCell}</td>
-        <td>${item.payment}</td>
-        <td>${removeBtn}</td>
-      `;
-    });
-}
-
-/**
- * Renderiza o controle de saldo inicial dos cartões (cartoes.html).
- */
-function renderCardControls() {
-  const cardListDiv = document.getElementById('card-list');
-  if (!cardListDiv) return;
-
-  cardListDiv.innerHTML = '';
-  
-  CARTAO_IDS.forEach(cardName => {
-    const initialBalance = globalData.cards[cardName] || 0;
+    const fixedForm = document.getElementById('fixed-expense-form');
+    if (fixedForm) fixedForm.addEventListener('submit', handleFixedExpenseSubmit);
     
-    // Calcula o total gasto no cartão neste mês (Despesas Variáveis + Fixas com esse cartão)
-    const varExpenses = globalData.expenses.filter(e => e.payment === cardName).reduce((sum, item) => sum + (item.value || 0), 0);
-    const fixedExpenses = globalData.fixedExpenses.filter(e => e.payment === cardName).reduce((sum, item) => sum + (item.currentMonthValue || 0), 0);
-    const totalSpent = varExpenses + fixedExpenses;
+    // NOVO: Adiciona listeners de navegação do mês
+    const prevMonthBtn = document.getElementById('prev-month-btn');
+    if (prevMonthBtn) prevMonthBtn.addEventListener('click', () => changeMonth(-1));
 
-    const currentFatura = initialBalance + totalSpent;
+    const nextMonthBtn = document.getElementById('next-month-btn');
+    if (nextMonthBtn) nextMonthBtn.addEventListener('click', () => changeMonth(1));
 
-    const cardHtml = `
-      <div class="card-item card-control">
-        <span>${cardName} (Fatura do mês anterior)</span>
-        <input type="number" step="0.01" id="card-initial-${cardName.replace(/[^a-zA-Z0-9]/g, '-')}" value="${initialBalance.toFixed(2)}" class="card-input" data-card-name="${cardName}">
-        <span style="font-weight:bold;">Fatura Atual: ${formatCurrency(currentFatura)}</span>
-      </div>
-    `;
-    cardListDiv.innerHTML += cardHtml;
-  });
+    // NOVO: Adiciona listeners de exportação
+    const exportCsvBtn = document.getElementById('export-csv-btn');
+    if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportMonthCSV);
+    
+    const exportPdfBtn = document.getElementById('export-pdf-btn');
+    if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportMonthPDF);
+
+    // NOVO: Adiciona listener para salvar cartões
+    const saveCardBtn = document.getElementById('save-card-btn');
+    if (saveCardBtn) saveCardBtn.addEventListener('click', saveCardInitialBalances);
+
+    // NOVO: Adiciona listener para toggle de recorrência
+    const fixedRecurrence = document.getElementById('fixed-expense-recurrence');
+    if (fixedRecurrence) fixedRecurrence.addEventListener('change', (e) => toggleRecurrenceForm(e.target.value));
+
+    // Expor funções globais para uso em botões criados dinamicamente no log (remove, edit)
+    window.removeLogItem = removeLogItem;
+    window.editFixedExpenseValue = editFixedExpenseValue;
+    window.toggleRecurrenceForm = toggleRecurrenceForm;
+    window.showModal = showModal; 
 }
 
-// -------------------- Funções de Persistência (Firestore) --------------------
+
+// -------------------- Funções de Banco de Dados (Firestore) --------------------
 
 /**
- * Adiciona um novo documento ao Firestore.
- * @param {string} collectionName
- * @param {Object} data
- * @returns {Promise<boolean>} Sucesso da operação.
+ * Configura os listeners de real-time do Firestore para todas as coleções.
  */
-async function addDocument(collectionName, data) {
-    const colRef = getDataRef(collectionName);
-    if (!colRef) return false;
-
-    try {
-        await addDoc(colRef, data);
-        return true;
-    } catch (e) {
-        console.error(`Erro ao adicionar documento em ${collectionName}:`, e);
-        return false;
-    }
-}
-
-/**
- * Remove um documento do Firestore.
- * @param {string} collectionName
- * @param {string} docId
- */
-window.removeLogItem = async function(collectionName, docId) {
-    if (!docId) {
-        console.error("ID do documento não fornecido.");
+function setupFirestoreListeners() {
+    if (!window.db || !window.userId) {
+        console.warn("Firestore ou userId não estão prontos. Adios.");
         return;
     }
 
-    // Usamos a coleção 'fixed_expenses' apenas para despesas únicas, ou para edições de recorrentes.
-    // Se o ID vier de 'fixed_expenses', deletamos lá. Se vier de 'entries' ou 'expenses', deletamos lá.
-    const path = getCollectionPath(collectionName);
-    const docRef = doc(db, path, docId);
+    // Listener para Entradas (Real-time)
+    const qEntries = collection(window.db, getCollectionPath(COLLECTIONS.ENTRIES));
+    onSnapshot(qEntries, (snapshot) => {
+        allEntries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if (document.getElementById('entries-log-body')) renderEntries();
+        calculateSummary();
+    }, error => console.error("Erro ao obter Entradas:", error));
 
-    try {
-        await deleteDoc(docRef);
-        // Recarrega os dados para atualizar a UI
-        loadData();
-    } catch (e) {
-        console.error(`Erro ao remover documento de ${collectionName}:`, e);
-    }
+    // Listener para Despesas Variáveis (Real-time)
+    const qExpenses = collection(window.db, getCollectionPath(COLLECTIONS.EXPENSES));
+    onSnapshot(qExpenses, (snapshot) => {
+        allExpenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if (document.getElementById('expenses-log-body')) renderExpenses();
+        calculateSummary();
+    }, error => console.error("Erro ao obter Despesas Variáveis:", error));
+
+    // Listener para Despesas Fixas (Real-time)
+    const qFixed = collection(window.db, getCollectionPath(COLLECTIONS.FIXED));
+    onSnapshot(qFixed, (snapshot) => {
+        allFixed = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        if (document.getElementById('fixed-expenses-log-body')) renderFixedExpenses();
+        calculateSummary();
+    }, error => console.error("Erro ao obter Despesas Fixas:", error));
+
+    // Listener para Saldo Inicial de Cartões (Real-time)
+    // Usamos um único documento para todos os saldos iniciais dos cartões
+    const cardDocRef = doc(window.db, getCollectionPath(COLLECTIONS.CARDS), 'balances');
+    onSnapshot(cardDocRef, (docSnap) => {
+        cardBalances = docSnap.exists() ? docSnap.data() : {};
+        if (document.getElementById('card-list')) renderCardControl();
+        calculateSummary();
+    }, error => console.error("Erro ao obter Saldo Inicial de Cartões:", error));
 }
 
 
-/**
- * Remove um template fixo OU apenas a instância do mês.
- * @param {string} expenseId - ID do documento em 'fixed_expenses' (se existir)
- * @param {string} templateId - ID do documento em 'fixed_templates'
- * @param {number} installmentNumber - Número da parcela (0 para mensal)
- */
-window.removeTemplateOrInstance = function(expenseId, templateId, installmentNumber) {
-    // Implementar lógica de modal/confirmação
-    
-    // Por simplicidade, vamos apenas deletar o template.
-    // Em um sistema real, você perguntaria se quer excluir SÓ a parcela do mês, ou o template inteiro.
-    if (confirm("Você deseja excluir:\n- OK: Apenas esta instância do mês atual?\n- Cancelar: O modelo recorrente/parcelado inteiro?")) {
-        // Excluir a instância (cria uma entrada de edição com valor 0 se for template)
-        if (expenseId) {
-            removeLogItem('fixed_expenses', expenseId);
-        } else {
-            // Se não tem ID de fixed_expenses, cria uma nova entrada de edição com valor 0 para este mês
-            const item = globalData.fixedExpenses.find(e => e.instanceId === templateId && e.installmentNumber === installmentNumber);
-            if (item) {
-                const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
-                addDocument('fixed_expenses', {
-                    description: item.description,
-                    value: 0,
-                    category: item.category,
-                    payment: item.payment,
-                    monthKey: monthKey,
-                    instanceId: templateId,
-                    installmentNumber: installmentNumber
-                }).then(() => loadData());
-            }
-        }
-    } else {
-        // Excluir o template inteiro
-        const templatePath = getCollectionPath('fixed_templates');
-        const docRef = doc(db, templatePath, templateId);
-        deleteDoc(docRef).then(() => loadData()).catch(e => console.error("Erro ao deletar template fixo:", e));
-    }
-};
+// -------------------- Manipuladores de Forms --------------------
 
 /**
- * Permite editar o valor de uma despesa fixa para o mês atual.
- * @param {string} expenseId - ID do documento em 'fixed_expenses' (se existir)
- * @param {string} templateId - ID do documento em 'fixed_templates'
- * @param {number} installmentNumber - Número da parcela (0 para mensal)
- */
-window.editFixedExpenseValue = function(expenseId, templateId, installmentNumber) {
-    const item = globalData.fixedExpenses.find(e => 
-      (e.id === expenseId && !e.instanceId) || 
-      (e.instanceId === templateId && e.installmentNumber === installmentNumber)
-    );
-    
-    if (!item) return;
-
-    const newValue = prompt(`Editar valor para ${item.description}:`, item.currentMonthValue.toFixed(2));
-    if (newValue === null || isNaN(parseFloat(newValue))) return;
-
-    const parsedValue = parseFloat(newValue);
-    if (parsedValue < 0) {
-      alert("O valor não pode ser negativo.");
-      return;
-    }
-
-    const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
-    const baseData = {
-        description: item.description.replace(/\s\(\d+\/\d+\)$/, ''), // Remove a contagem de parcela
-        value: parsedValue,
-        category: item.category,
-        payment: item.payment,
-        monthKey: monthKey
-    };
-
-    if (item.instanceId) {
-        // É uma edição de um template recorrente
-        const docId = item.id;
-        const dataToSave = { 
-            ...baseData, 
-            instanceId: templateId, 
-            installmentNumber: installmentNumber 
-        };
-
-        const colRef = getDataRef('fixed_expenses');
-
-        if (docId) {
-            // Documento de edição já existe, atualiza
-            updateDoc(doc(colRef, docId), dataToSave).then(() => loadData());
-        } else {
-            // Cria um novo documento de edição para este mês
-            addDoc(colRef, dataToSave).then(() => loadData());
-        }
-    } else {
-        // É uma despesa única lançada neste mês (Recorrência: 'Unica' ou sem instanceId)
-        const docRef = doc(getDataRef('fixed_expenses'), expenseId);
-        updateDoc(docRef, { value: parsedValue }).then(() => loadData());
-    }
-}
-
-/**
- * Salva o Saldo Inicial de Caixa e Cartões.
- */
-window.saveCardInitialBalances = async function() {
-  const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
-  
-  // 1. Salva Saldo Inicial de Cartões
-  const cardInputs = document.querySelectorAll('.card-input');
-  const cardBalances = {};
-  cardInputs.forEach(input => {
-    const cardName = input.getAttribute('data-card-name');
-    cardBalances[cardName] = parseFloat(input.value) || 0;
-  });
-
-  const settingsRef = doc(getDataRef('settings'), 'cards');
-  try {
-    await setDoc(settingsRef, { balances: cardBalances }, { merge: true });
-    alert("Saldos de Cartões salvos com sucesso!");
-  } catch (e) {
-    console.error("Erro ao salvar saldos de cartões:", e);
-    alert("Erro ao salvar saldos de cartões.");
-    return;
-  }
-  
-  // 2. Salva Saldo Inicial de Caixa
-  // O saldo inicial de caixa para o mês M é o saldo final do mês M-1.
-  // Vamos armazenar isso em 'monthly_balances'
-  // Por simplicidade na UI, a edição é feita no campo de Saldo em Caixa no Painel
-  const saldoCaixaElement = document.getElementById('saldo-caixa')?.querySelector('.value');
-  const saldoFinalCaixa = parseFloat(saldoCaixaElement?.textContent.replace(/[R$\.,]/g, '').replace(' ', '') / 100) || 0;
-  
-  // O valor que estamos vendo no painel é o SALDO FINAL. 
-  // Para persistir o SALDO INICIAL, precisamos de uma UI dedicada (atualmente em cartoes.html, mas sem input).
-  // Vamos pular a persistência do saldo FINAL aqui para evitar sobrescrever a lógica de cálculo.
-  // A edição do SALDO INICIAL precisa ser feita no campo específico, que será um modal ou input em `cartoes.html`.
-  
-  loadData();
-}
-
-/**
- * Atualiza o saldo inicial de caixa (Dinheiro/PIX) para o mês atual.
- * @param {number} newBalance
- */
-async function updateInitialCashBalance(newBalance) {
-    const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
-    const balanceRef = doc(getDataRef('settings'), 'monthly_balances');
-    
-    try {
-        await setDoc(balanceRef, { 
-            [monthKey]: { initialCashBalance: newBalance } 
-        }, { merge: true });
-        console.log("Saldo inicial de caixa atualizado.");
-        loadData();
-    } catch (e) {
-        console.error("Erro ao salvar saldo inicial de caixa:", e);
-    }
-}
-
-
-// -------------------- Handlers de Formulário --------------------
-
-/**
- * Handler para submissão do formulário de Entradas.
+ * Envia uma nova entrada para o Firestore.
  */
 async function handleEntrySubmit(e) {
-  e.preventDefault();
-  const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    const entry = {
+        date: data['entry-date'],
+        platform: data['entry-platform'],
+        value: parseFloat(data['entry-value']),
+        km: parseFloat(data['entry-km']),
+        hours: parseFloat(data['entry-hours']),
+        gas: parseFloat(data['entry-gas']),
+        otherCosts: parseFloat(data['entry-other-costs']),
+        monthKey: data['entry-date'].substring(0, 7)
+    };
 
-  const data = {
-    date: document.getElementById('entry-date').value,
-    platform: document.getElementById('entry-platform').value,
-    value: parseFloat(document.getElementById('entry-value').value) || 0,
-    km: parseFloat(document.getElementById('entry-km').value) || 0,
-    hours: parseFloat(document.getElementById('entry-hours').value) || 0,
-    gas: parseFloat(document.getElementById('entry-gas').value) || 0,
-    otherCosts: parseFloat(document.getElementById('entry-other-costs').value) || 0,
-    monthKey: monthKey
-  };
-  
-  if (data.value <= 0 || !data.date) {
-      alert("Preencha todos os campos obrigatórios com valores válidos.");
-      return;
-  }
-
-  if (await addDocument('entries', data)) {
-    e.target.reset();
-    loadData(); // Recarrega os dados após a submissão
-  }
+    try {
+        await addDoc(collection(window.db, getCollectionPath(COLLECTIONS.ENTRIES)), entry);
+        e.target.reset();
+        document.getElementById('entry-date').valueAsDate = new Date();
+    } catch (e) {
+        console.error("Erro ao adicionar entrada: ", e);
+        showModal('Erro ao salvar entrada. Verifique sua conexão e tente novamente.');
+    }
 }
 
 /**
- * Handler para submissão do formulário de Despesas Variáveis.
+ * Envia uma nova despesa variável para o Firestore.
  */
 async function handleExpenseSubmit(e) {
-  e.preventDefault();
-  const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    const expense = {
+        date: data['expense-date'],
+        category: data['expense-category'],
+        description: data['expense-description'],
+        payment: data['expense-payment'],
+        value: parseFloat(data['expense-value']),
+        monthKey: data['expense-date'].substring(0, 7)
+    };
 
-  const data = {
-    date: document.getElementById('expense-date').value,
-    category: document.getElementById('expense-category').value,
-    description: document.getElementById('expense-description').value,
-    payment: document.getElementById('expense-payment').value,
-    value: parseFloat(document.getElementById('expense-value').value) || 0,
-    monthKey: monthKey
-  };
-  
-  if (data.value <= 0 || !data.date || !data.description) {
-      alert("Preencha todos os campos obrigatórios com valores válidos.");
-      return;
-  }
-
-  if (await addDocument('expenses', data)) {
-    e.target.reset();
-    loadData();
-  }
+    try {
+        await addDoc(collection(window.db, getCollectionPath(COLLECTIONS.EXPENSES)), expense);
+        e.target.reset();
+        document.getElementById('expense-date').valueAsDate = new Date();
+    } catch (e) {
+        console.error("Erro ao adicionar despesa: ", e);
+        showModal('Erro ao salvar despesa. Verifique sua conexão e tente novamente.');
+    }
 }
 
 /**
- * Handler para submissão do formulário de Despesas Fixas.
+ * Envia uma nova despesa fixa/dívida para o Firestore.
  */
 async function handleFixedExpenseSubmit(e) {
-  e.preventDefault();
-  const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
-
-  const recurrence = document.getElementById('fixed-expense-recurrence').value;
-  const value = parseFloat(document.getElementById('fixed-expense-value').value) || 0;
-
-  if (value <= 0) {
-      alert("O valor deve ser maior que zero.");
-      return;
-  }
-  
-  const baseData = {
-    description: document.getElementById('fixed-expense-description').value,
-    category: document.getElementById('fixed-expense-category').value,
-    payment: document.getElementById('fixed-expense-payment').value,
-    value: value,
-    monthKey: monthKey,
-    recurrence: recurrence
-  };
-
-  let collectionName = 'fixed_templates'; // Padrão para mensal/parcelado
-  let dataToSave = baseData;
-
-  if (recurrence === 'Unica') {
-    // Despesa única é salva diretamente na coleção de despesas do mês
-    collectionName = 'fixed_expenses'; 
-    dataToSave = baseData; // Sem totalInstallments
-  } else if (recurrence === 'Parcelada') {
-    const totalInstallments = parseInt(document.getElementById('fixed-expense-total-installments').value);
-    if (!totalInstallments || totalInstallments < 2) {
-      alert("Para despesa parcelada, o total de parcelas deve ser 2 ou mais.");
-      return;
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    
+    let installments = 1;
+    if (data['fixed-expense-recurrence'] === 'Parcelada') {
+        installments = parseInt(data['fixed-expense-total-installments']);
+        if (installments < 2) {
+             showModal("Para despesas 'Parceladas', o total de parcelas deve ser 2 ou mais.");
+             return;
+        }
     }
-    dataToSave = { ...baseData, totalInstallments };
-  }
-  
-  // Mensal e Parcelada salvam em 'fixed_templates' para projeção
-  if (await addDocument(collectionName, dataToSave)) {
-    e.target.reset();
-    document.getElementById('fixed-expense-recurrence').value = 'Unica';
-    toggleRecurrenceForm('Unica');
-    loadData();
-  }
+    
+    // Data de início é o dia 1 do mês/ano atual do painel
+    const startDate = new Date(currentYear, currentMonth, 1).toISOString().substring(0, 10);
+
+    const baseFixed = {
+        startDate: startDate, // Mês de início
+        category: data['fixed-expense-category'],
+        description: data['fixed-expense-description'],
+        payment: data['fixed-expense-payment'],
+        value: parseFloat(data['fixed-expense-value']),
+        recurrence: data['fixed-expense-recurrence'],
+        installments: installments,
+        totalPaid: 0,
+        monthKey: getCurrentMonthKey() // Mês de registro
+    };
+    
+    try {
+        await addDoc(collection(window.db, getCollectionPath(COLLECTIONS.FIXED)), baseFixed);
+        e.target.reset();
+        toggleRecurrenceForm('Unica');
+    } catch (e) {
+        console.error("Erro ao adicionar despesa fixa: ", e);
+        showModal('Erro ao salvar despesa fixa. Verifique sua conexão e tente novamente.');
+    }
 }
 
 /**
- * Alterna a visibilidade dos campos de recorrência (parcelas).
+ * Remove um item do log (Entrada, Despesa Variável ou Fixa).
  */
-window.toggleRecurrenceForm = function(recurrence) {
-  const parcelasGroup = document.getElementById('parcelas-group');
-  if (parcelasGroup) {
-    if (recurrence === 'Parcelada') {
-      parcelasGroup.style.display = 'block';
-      document.getElementById('fixed-expense-total-installments').setAttribute('required', 'required');
-    } else {
-      parcelasGroup.style.display = 'none';
-      document.getElementById('fixed-expense-total-installments').removeAttribute('required');
+async function removeLogItem(type, id) {
+    if (!confirm(`Tem certeza que deseja remover este registro (${type})?`)) return;
+    try {
+        await deleteDoc(doc(window.db, getCollectionPath(COLLECTIONS[type]), id));
+    } catch (e) {
+        console.error(`Erro ao remover ${type}: `, e);
+        showModal('Erro ao remover registro. Tente novamente.');
     }
-  }
+}
+
+/**
+ * Permite editar o valor de uma parcela/despesa fixa já registrada.
+ */
+async function editFixedExpenseValue(id, currentDesc, currentValue) {
+    const newValueStr = prompt(`Editando: ${currentDesc}\nValor Atual: ${formatCurrency(currentValue)}\nDigite o novo valor:`, currentValue.toFixed(2));
+    if (newValueStr === null) return; // Cancelado
+    
+    const newValue = parseFloat(newValueStr.replace(',', '.'));
+    if (isNaN(newValue) || newValue <= 0) {
+        showModal("Valor inválido.");
+        return;
+    }
+
+    try {
+        const fixedRef = doc(window.db, getCollectionPath(COLLECTIONS.FIXED), id);
+        await updateDoc(fixedRef, { value: newValue });
+    } catch (e) {
+        console.error("Erro ao editar despesa fixa:", e);
+        showModal('Erro ao editar despesa fixa. Tente novamente.');
+    }
+}
+
+// -------------------- Funções de Renderização --------------------
+
+/**
+ * Preenche os campos <select> com as opções da lista.
+ */
+function loadOptions() {
+    const selectors = {
+        'entry-platform': LISTAS.plataformas,
+        'expense-category': LISTAS.categorias,
+        'fixed-expense-category': LISTAS.categorias,
+        'expense-payment': LISTAS.pagamentos,
+        'fixed-expense-payment': LISTAS.pagamentos
+    };
+
+    for (const id in selectors) {
+        const select = document.getElementById(id);
+        if (select) {
+            // Limpa as opções existentes
+            select.innerHTML = ''; 
+            // Adiciona a opção "Selecione..." para garantir validação
+            const defaultOption = document.createElement('option');
+            defaultOption.value = "";
+            defaultOption.textContent = "Selecione...";
+            defaultOption.disabled = true;
+            defaultOption.selected = true;
+            select.appendChild(defaultOption);
+            
+            // Adiciona as opções da lista
+            selectors[id].forEach(opt => {
+                 const option = document.createElement('option');
+                 option.value = opt.value;
+                 option.textContent = opt.label;
+                 select.appendChild(option);
+            });
+        }
+    }
+    
+    // Set default date to today
+    const today = new Date().toISOString().split('T')[0];
+    if (document.getElementById('entry-date')) document.getElementById('entry-date').value = today;
+    if (document.getElementById('expense-date')) document.getElementById('expense-date').value = today;
+}
+
+/**
+ * Renderiza a lista de Entradas do mês atual.
+ */
+function renderEntries() {
+    const tbody = document.getElementById('entries-log-body');
+    if (!tbody) return;
+
+    const monthKey = getCurrentMonthKey();
+    const filtered = allEntries
+        .filter(e => e.monthKey === monthKey)
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    tbody.innerHTML = filtered.map(e => `
+        <tr>
+            <td>${e.date}</td>
+            <td>${e.platform}</td>
+            <td>${formatCurrency(e.value)}</td>
+            <td>${e.km}</td>
+            <td><button class="delete-btn" onclick="removeLogItem('ENTRIES', '${e.id}')">Excluir</button></td>
+        </tr>
+    `).join('');
+}
+
+/**
+ * Renderiza a lista de Despesas Variáveis do mês atual.
+ */
+function renderExpenses() {
+    const tbody = document.getElementById('expenses-log-body');
+    if (!tbody) return;
+
+    const monthKey = getCurrentMonthKey();
+    const filtered = allExpenses
+        .filter(e => e.monthKey === monthKey)
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    tbody.innerHTML = filtered.map(e => `
+        <tr>
+            <td>${e.date}</td>
+            <td>${e.category}</td>
+            <td>${formatCurrency(e.value)}</td>
+            <td>${e.payment}</td>
+            <td><button class="delete-btn" onclick="removeLogItem('EXPENSES', '${e.id}')">Excluir</button></td>
+        </tr>
+    `).join('');
+}
+
+/**
+ * Renderiza a lista de Despesas Fixas do mês atual (projetando parcelas futuras).
+ */
+function renderFixedExpenses() {
+    const tbody = document.getElementById('fixed-expenses-log-body');
+    if (!tbody) return;
+
+    // Obtém as despesas fixas relevantes para o mês atual
+    const monthFixedExpenses = getFixedExpensesForMonth(currentYear, currentMonth, allFixed);
+
+    // Renderização
+    tbody.innerHTML = monthFixedExpenses.map(item => {
+        const desc = item.installments > 1 
+            ? `${item.description} (${item.currentInstallment}/${item.installments})` 
+            : item.description;
+        
+        // Escapa aspas simples na descrição para evitar quebrar o onclick
+        const escapedDesc = item.description.replace(/'/g, "\\'");
+
+        const actionButton = item.payment.startsWith('💳') ? '' : // Não edita cartões, pois eles são detalhados
+            `<button class="edit-btn" onclick="editFixedExpenseValue('${item.id}', '${escapedDesc}', ${item.value})">Editar</button>`;
+
+        return `
+            <tr>
+                <td>${desc}</td>
+                <td>${formatCurrency(item.value)}</td>
+                <td>${item.payment}</td>
+                <td>${actionButton}<button class="delete-btn" onclick="removeLogItem('FIXED', '${item.id}')">Excluir Base</button></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+/**
+ * Renderiza a interface de controle de Saldo Inicial de Cartões.
+ */
+function renderCardControl() {
+    const cardList = document.getElementById('card-list');
+    if (!cardList) return;
+
+    cardList.innerHTML = CARTAO_IDS.map(cardId => `
+        <div class="card-item">
+            <span>${cardId}</span>
+            <input 
+                type="number" 
+                id="initial-balance-${cardId.replace(/[^a-zA-Z0-9]/g, '')}" 
+                value="${(cardBalances[cardId] || 0).toFixed(2)}"
+                step="0.01" 
+                style="width: 120px; text-align: right;"
+            >
+        </div>
+    `).join('');
 }
 
 
-// -------------------- Funções de Exportação (CSV e PDF) --------------------
+// -------------------- Funções de Cálculo --------------------
+
+/**
+ * Retorna as despesas fixas que se aplicam ao mês/ano fornecido,
+ * projetando parcelas e recorrências.
+ */
+function getFixedExpensesForMonth(year, monthIndex, fixedData) {
+    const targetDate = new Date(year, monthIndex, 1);
+    
+    return fixedData.reduce((acc, fixed) => {
+        // Mês/Ano que a despesa foi registrada
+        const startDateParts = fixed.startDate.split('-');
+        const startYear = parseInt(startDateParts[0]);
+        const startMonth = parseInt(startDateParts[1]) - 1; 
+
+        // Diferença de meses entre o mês de registro e o mês alvo
+        const monthDiff = (year - startYear) * 12 + (monthIndex - startMonth);
+
+        // 1. Despesas Únicas: Só aplicam no mês de registro (monthDiff = 0)
+        if (fixed.recurrence === 'Unica') {
+            if (monthDiff === 0) {
+                acc.push({ ...fixed, currentInstallment: 1 });
+            }
+        }
+        // 2. Despesas Mensais: Aplicam para o mês de registro e todos os meses futuros
+        else if (fixed.recurrence === 'Mensal') {
+            if (monthDiff >= 0) {
+                acc.push({ ...fixed, currentInstallment: 1 });
+            }
+        }
+        // 3. Despesas Parceladas: Aplicam para o número de parcelas
+        else if (fixed.recurrence === 'Parcelada') {
+            const currentInstallment = monthDiff + 1; // 0 diff = parcela 1
+
+            if (currentInstallment >= 1 && currentInstallment <= fixed.installments) {
+                acc.push({ ...fixed, currentInstallment: currentInstallment });
+            }
+        }
+        return acc;
+    }, []);
+}
+
+/**
+ * Calcula e atualiza todos os dados do painel e gráficos.
+ */
+function calculateSummary() {
+    if (!window.db || !window.userId) return; // Garante que o Firebase está pronto
+
+    const monthKey = getCurrentMonthKey();
+
+    // 1. Filtrar dados do Mês Atual
+    const currentEntries = allEntries.filter(e => e.monthKey === monthKey);
+    const currentExpenses = allExpenses.filter(e => e.monthKey === monthKey);
+    const currentFixed = getFixedExpensesForMonth(currentYear, currentMonth, allFixed);
+
+    // 2. CÁLCULO DE TOTAIS
+
+    // Entradas
+    const totalEntries = currentEntries.reduce((sum, e) => sum + e.value, 0);
+    const totalKm = currentEntries.reduce((sum, e) => sum + e.km, 0);
+    const totalHours = currentEntries.reduce((sum, e) => sum + e.hours, 0);
+    const totalGas = currentEntries.reduce((sum, e) => sum + e.gas, 0);
+    const totalOtherCosts = currentEntries.reduce((sum, e) => sum + e.otherCosts, 0);
+
+    // Despesas Variáveis
+    const totalVarExpenses = currentExpenses.reduce((sum, e) => sum + e.value, 0);
+
+    // Despesas Fixas (Parcelas/Recorrentes)
+    const totalFixedExpenses = currentFixed.reduce((sum, e) => sum + e.value, 0);
+
+    // Total em Cartões (Inicial + Variável + Fixa via Cartão)
+    const totalCardPayments = currentExpenses.filter(e => e.payment.startsWith('💳'))
+        .reduce((sum, e) => sum + e.value, 0);
+    const totalCardFixed = currentFixed.filter(e => e.payment.startsWith('💳'))
+        .reduce((sum, e) => sum + e.value, 0);
+
+    // Total de Custos em Dinheiro/PIX (para Saldo em Caixa)
+    const totalMoneyPixExpenses = totalGas + totalOtherCosts + 
+        currentExpenses.filter(e => DINHEIRO_PIX_IDS.includes(e.payment))
+        .reduce((sum, e) => sum + e.value, 0);
+    const totalMoneyPixFixed = currentFixed.filter(e => DINHEIRO_PIX_IDS.includes(e.payment))
+        .reduce((sum, e) => sum + e.value, 0);
+    const totalMoneyPixCosts = totalMoneyPixExpenses + totalMoneyPixFixed;
+
+    // Saldo Inicial dos Cartões
+    let totalCardInitialBalance = 0;
+    for (const id in cardBalances) {
+        if (CARTAO_IDS.includes(id)) {
+            totalCardInitialBalance += cardBalances[id] || 0;
+        }
+    }
+    
+    // Total Faturas Mês
+    const totalFaturasMes = totalCardInitialBalance + totalCardPayments + totalCardFixed;
+
+
+    // 3. CÁLCULOS FINAIS
+
+    const totalAllExpenses = totalVarExpenses + totalFixedExpenses + totalGas + totalOtherCosts;
+    const lucroLiquido = totalEntries - totalAllExpenses;
+    
+    // Saldo em Caixa = Entradas - Custos em Dinheiro/PIX (Gasolina, Outros Custos, Despesas Dinheiro/PIX)
+    const totalMoneyPixRevenue = currentEntries.reduce((sum, e) => sum + e.value, 0); 
+    const saldoCaixa = totalMoneyPixRevenue - totalMoneyPixCosts;
+
+
+    // 4. ATUALIZAR DOM (Painel)
+    if (document.getElementById('total-entradas')) {
+        document.getElementById('total-entradas').querySelector('.value').textContent = formatCurrency(totalEntries);
+        document.getElementById('total-despesas').querySelector('.value').textContent = formatCurrency(totalAllExpenses);
+        document.getElementById('lucro-liquido').querySelector('.value').textContent = formatCurrency(lucroLiquido);
+        document.getElementById('total-km').textContent = `${totalKm.toFixed(1)} km`;
+        document.getElementById('total-hours').textContent = `${totalHours.toFixed(1)} h`;
+        
+        // Saldo em Caixa
+        document.getElementById('saldo-caixa').querySelector('.value').textContent = formatCurrency(saldoCaixa);
+        document.getElementById('saldo-caixa').querySelector('.small').textContent = 
+            `Total de Entradas: ${formatCurrency(totalEntries)}. Custos em Dinheiro/PIX: ${formatCurrency(totalMoneyPixCosts)}`;
+
+        document.getElementById('var-exp-value').textContent = formatCurrency(totalVarExpenses);
+        document.getElementById('fix-exp-value').textContent = formatCurrency(totalFixedExpenses + totalGas + totalOtherCosts);
+    }
+    
+    // Atualiza Cartões (se na página de cartões)
+    if (document.getElementById('total-faturas-display')) {
+        document.getElementById('total-faturas-display').textContent = formatCurrency(totalFaturasMes);
+    }
+
+
+    // 5. ATUALIZAR GRÁFICOS
+    updateCharts(currentExpenses, currentFixed, totalEntries, totalAllExpenses);
+}
+
+// -------------------- Funções de Gráficos (Chart.js) --------------------
+
+let chartDonut, chartBar;
+
+function updateCharts(expensesVar, expensesFixed, totalEntries, totalExpenses) {
+    const ctxDonut = document.getElementById('chart-donut');
+    if (ctxDonut) {
+        const dataDonut = {
+            labels: ['Entradas (Receitas)', 'Despesas Totais'],
+            datasets: [{
+                data: [totalEntries, totalExpenses],
+                backgroundColor: [
+                    'var(--cor-sucesso)',
+                    'var(--cor-erro)'
+                ],
+                hoverOffset: 4
+            }]
+        };
+
+        if (chartDonut) chartDonut.destroy();
+        chartDonut = new Chart(ctxDonut, {
+            type: 'doughnut',
+            data: dataDonut,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top', labels: { color: 'var(--cor-texto)' } },
+                    title: { display: false }
+                }
+            }
+        });
+    }
+
+    const ctxBar = document.getElementById('chart-bar');
+    if (ctxBar) {
+        const allExpenses = [...expensesVar, ...expensesFixed];
+        const categoryTotals = allExpenses.reduce((acc, exp) => {
+            const cat = exp.category;
+            acc[cat] = (acc[cat] || 0) + exp.value;
+            return acc;
+        }, {});
+
+        const labels = Object.keys(categoryTotals);
+        const data = Object.values(categoryTotals);
+
+        const dataBar = {
+            labels: labels,
+            datasets: [{
+                label: 'Total Gasto',
+                data: data,
+                backgroundColor: 'var(--cor-primaria)',
+                borderColor: 'var(--cor-primaria)',
+                borderWidth: 1
+            }]
+        };
+
+        if (chartBar) chartBar.destroy();
+        chartBar = new Chart(ctxBar, {
+            type: 'bar',
+            data: dataBar,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: 'var(--cor-texto)' },
+                        grid: { color: '#333' }
+                    },
+                    x: {
+                        ticks: { color: 'var(--cor-texto)' },
+                        grid: { display: false }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    title: { display: false }
+                }
+            }
+        });
+    }
+}
+
+
+// -------------------- Funções de Navegação e Exportação --------------------
+
+/**
+ * Altera o mês atual e recalcula o resumo.
+ */
+function changeMonth(delta) {
+    const newDate = new Date(currentYear, currentMonth + delta, 1);
+    currentMonth = newDate.getMonth();
+    currentYear = newDate.getFullYear();
+    
+    if (document.getElementById('current-month-display')) {
+        document.getElementById('current-month-display').textContent = getCurrentMonthDisplay();
+    }
+    if (document.getElementById('current-month-log-display')) {
+        document.getElementById('current-month-log-display').textContent = getCurrentMonthDisplay();
+    }
+
+    // O recalculo é acionado pelos listeners do Firestore, mas chamamos para garantir
+    calculateSummary();
+    if (document.getElementById('fixed-expenses-log-body')) renderFixedExpenses();
+}
+
+/**
+ * Alterna os campos do formulário de despesa fixa.
+ */
+function toggleRecurrenceForm(value) {
+    const parcelasGroup = document.getElementById('parcelas-group');
+    const totalInstallmentsInput = document.getElementById('fixed-expense-total-installments');
+    if (parcelasGroup && totalInstallmentsInput) {
+        parcelasGroup.style.display = value === 'Parcelada' ? 'block' : 'none';
+        totalInstallmentsInput.required = (value === 'Parcelada');
+    }
+}
+
+/**
+ * Salva os saldos iniciais dos cartões.
+ */
+async function saveCardInitialBalances() {
+    const newBalances = {};
+    let hasChanges = false;
+    
+    CARTAO_IDS.forEach(cardId => {
+        const inputId = `initial-balance-${cardId.replace(/[^a-zA-Z0-9]/g, '')}`;
+        const input = document.getElementById(inputId);
+        if (input) {
+            const value = parseFloat(input.value) || 0;
+            newBalances[cardId] = value;
+            if (cardBalances[cardId] !== value) hasChanges = true;
+        }
+    });
+
+    if (!hasChanges) {
+        showModal("Nenhuma alteração detectada para salvar.");
+        return;
+    }
+
+    try {
+        const cardDocRef = doc(window.db, getCollectionPath(COLLECTIONS.CARDS), 'balances');
+        await setDoc(cardDocRef, newBalances);
+        showModal("Saldos iniciais dos cartões salvos com sucesso!");
+    } catch (e) {
+        console.error("Erro ao salvar saldos iniciais:", e);
+        showModal("Erro ao salvar saldos. Tente novamente.");
+    }
+}
 
 /**
  * Exporta os dados do mês atual para CSV.
  */
-window.exportMonthCSV = function() {
-  const monthName = MESES_PT[currentMonth];
-  const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
-  
-  let csvContent = "Tipo,Data,Descrição/Plataforma,Categoria,Forma de Pagamento,Valor,KM,Horas\n";
+function exportMonthCSV() {
+    const monthKey = getCurrentMonthKey();
+    const data = [
+        ...allEntries.filter(e => e.monthKey === monthKey).map(e => ({ Tipo: 'Entrada', Data: e.date, Descrição: e.platform, Valor: e.value, KM: e.km, Horas: e.hours, Gasolina: e.gas, Outros_Custos: e.otherCosts })),
+        ...allExpenses.filter(e => e.monthKey === monthKey).map(e => ({ Tipo: 'Despesa Variável', Data: e.date, Categoria: e.category, Descrição: e.description, Pagamento: e.payment, Valor: -e.value })),
+        ...getFixedExpensesForMonth(currentYear, currentMonth, allFixed).map(e => ({ Tipo: 'Despesa Fixa', Data: e.startDate, Categoria: e.category, Descrição: e.description + (e.currentInstallment > 1 ? ` (${e.currentInstallment}/${e.installments})` : ''), Pagamento: e.payment, Valor: -e.value }))
+    ];
 
-  // Entradas
-  globalData.entries.forEach(item => {
-    csvContent += `Entrada,${formatDate(item.date)},${item.platform},-,Dinheiro/PIX,${item.value},${item.km},${item.hours}\n`;
-    if (item.gas > 0) csvContent += `Custo Operacional (Gas),${formatDate(item.date)},Gasolina,Combustível,Dinheiro/PIX,-${item.gas},, \n`;
-    if (item.otherCosts > 0) csvContent += `Custo Operacional (Outros),${formatDate(item.date)},Outros Custos,Outros,Dinheiro/PIX,-${item.otherCosts},, \n`;
-  });
+    if (data.length === 0) {
+        showModal("Não há dados para exportar neste mês.");
+        return;
+    }
 
-  // Despesas Variáveis
-  globalData.expenses.forEach(item => {
-    const value = item.value * -1;
-    csvContent += `Despesa Variável,,${item.description},${item.category},${item.payment},${value},,\n`;
-  });
+    const headers = ["Tipo", "Data", "Descrição", "Valor", "Categoria", "Pagamento", "KM", "Horas", "Gasolina", "Outros_Custos"];
+    const csvContent = "data:text/csv;charset=utf-8," + 
+        [
+            headers.join(";"),
+            ...data.map(row => headers.map(header => row[header] !== undefined ? (typeof row[header] === 'number' ? String(row[header]).replace('.', ',') : row[header]) : '').join(";"))
+        ].join("\n");
 
-  // Despesas Fixas (incluindo projeções)
-  globalData.fixedExpenses.forEach(item => {
-    const value = item.currentMonthValue * -1;
-    csvContent += `Despesa Fixa/Dívida,,${item.description},${item.category},${item.payment},${value},,\n`;
-  });
-
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement("a");
-  if (link.download !== undefined) {
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Controle_Financeiro_${monthName}_${currentYear}.csv`);
-    link.style.visibility = 'hidden';
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `ControleFinanceiro_${monthKey}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }
 }
 
 /**
- * Exporta os dados do mês atual para PDF (usando jspdf).
+ * Exporta os dados do painel para PDF.
  */
-window.exportMonthPDF = function() {
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  const monthName = MESES_PT[currentMonth];
-  
-  doc.setFontSize(16);
-  doc.text(`Relatório Financeiro: ${monthName}/${currentYear}`, 10, 10);
-  
-  doc.setFontSize(10);
-  doc.text(`Gerado em: ${formatDate(new Date())}`, 10, 15);
+function exportMonthPDF() {
+    if (!window.jspdf) {
+        showModal("Biblioteca jspdf não carregada. Verifique as tags <script>.");
+        return;
+    }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const monthDisplay = getCurrentMonthDisplay();
 
-  let y = 25;
-  
-  // Função auxiliar para adicionar tabela
-  const addTable = (title, headers, data) => {
-    if (data.length === 0) return;
+    doc.setFontSize(18);
+    doc.text(`Relatório Financeiro: ${monthDisplay}`, 14, 22);
     doc.setFontSize(12);
-    doc.text(title, 10, y);
-    y += 5;
+
+    let y = 30;
+
+    const addStat = (title, value, color) => {
+        doc.setFillColor(color[0], color[1], color[2]);
+        doc.rect(14, y, 180, 8, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.text(title, 16, y + 6);
+        doc.text(value, 190, y + 6, null, null, "right");
+        y += 10;
+    };
     
-    const tableData = data.map(item => headers.map(header => item[header.key]));
+    // Cores (RGB de cores do CSS)
+    const corSucesso = [76, 175, 80];
+    const corErro = [244, 67, 54];
+    const corDestaque = [255, 152, 0];
+    const corPrimaria = [33, 150, 243];
 
-    doc.autoTable({
-        startY: y,
-        head: [headers.map(h => h.title)],
-        body: tableData,
-        theme: 'striped',
-        styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
-        headStyles: { fillColor: [33, 150, 243] } // Cor Primária
-    });
+    // Obter valores do DOM
+    const totalEntradas = document.getElementById('total-entradas')?.querySelector('.value')?.textContent || 'R$ 0,00';
+    const totalDespesas = document.getElementById('total-despesas')?.querySelector('.value')?.textContent || 'R$ 0,00';
+    const lucroLiquido = document.getElementById('lucro-liquido')?.querySelector('.value')?.textContent || 'R$ 0,00';
+    const saldoCaixa = document.getElementById('saldo-caixa')?.querySelector('.value')?.textContent || 'R$ 0,00';
+
+    addStat('Total Entradas', totalEntradas, corSucesso);
+    addStat('Total Despesas', totalDespesas, corErro);
+    addStat('Lucro Líquido', lucroLiquido, corDestaque);
+    addStat('Saldo em Caixa (Dinheiro/PIX)', saldoCaixa, corPrimaria);
     
-    y = doc.autoTable.previous.finalY + 10;
-  };
-  
-  const entriesHeaders = [
-    { title: "Data", key: 'date' },
-    { title: "Plataforma", key: 'platform' },
-    { title: "Valor", key: 'value' },
-    { title: "KM", key: 'km' },
-    { title: "Horas", key: 'hours' },
-    { title: "Gasolina", key: 'gas' },
-    { title: "Outros Custos", key: 'otherCosts' }
-  ];
-  
-  const entriesData = globalData.entries.map(e => ({
-      date: formatDate(e.date),
-      platform: e.platform,
-      value: formatCurrency(e.value),
-      km: e.km.toFixed(1),
-      hours: e.hours.toFixed(1),
-      gas: formatCurrency(e.gas * -1),
-      otherCosts: formatCurrency(e.otherCosts * -1),
-  }));
-
-  const expensesHeaders = [
-    { title: "Data", key: 'date' },
-    { title: "Descrição", key: 'description' },
-    { title: "Categoria", key: 'category' },
-    { title: "Forma de Pgto", key: 'payment' },
-    { title: "Valor", key: 'value' }
-  ];
-
-  const expensesData = globalData.expenses.map(e => ({
-      date: formatDate(e.date),
-      description: e.description,
-      category: LISTAS.categorias.find(c => c.value === e.category)?.label || e.category,
-      payment: e.payment,
-      value: formatCurrency(e.value * -1)
-  }));
-  
-  const fixedHeaders = [
-    { title: "Descrição/Parcela", key: 'description' },
-    { title: "Categoria", key: 'category' },
-    { title: "Forma de Pgto", key: 'payment' },
-    { title: "Valor", key: 'value' }
-  ];
-  
-  const fixedData = globalData.fixedExpenses.map(e => ({
-      description: e.description,
-      category: LISTAS.categorias.find(c => c.value === e.category)?.label || e.category,
-      payment: e.payment,
-      value: formatCurrency(e.currentMonthValue * -1)
-  }));
-  
-  addTable("Entradas do Mês", entriesHeaders, entriesData);
-  addTable("Despesas Variáveis", expensesHeaders, expensesData);
-  addTable("Despesas Fixas e Dívidas", fixedHeaders, fixedData);
-
-  doc.save(`Relatorio_${monthName}_${currentYear}.pdf`);
+    doc.save(`Relatorio_Financeiro_${getCurrentMonthKey()}.pdf`);
 }
-
-// -------------------- Inicialização --------------------
 
 /**
- * Função principal de inicialização da aplicação.
+ * Exibe um modal simples (substituto de alert()).
  */
-function initApp() {
-  // Inicializa o mês atual
-  setMonth(new Date());
+function showModal(message) {
+    const modalId = 'app-modal';
+    let modal = document.getElementById(modalId);
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = modalId;
+        modal.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0, 0, 0, 0.7); display: flex; 
+            justify-content: center; align-items: center; z-index: 1000;
+        `;
+        modal.innerHTML = `
+            <div style="background: var(--cor-card); padding: 20px; border-radius: 10px; 
+                        max-width: 300px; text-align: center; border: 2px solid var(--cor-destaque);">
+                <p id="modal-message" style="margin-bottom: 20px; color:var(--cor-texto);"></p>
+                <button onclick="document.getElementById('${modalId}').style.display='none'" 
+                        style="padding: 8px 15px; background: var(--cor-destaque); color: black; border: none; border-radius: 5px; cursor: pointer;">
+                    OK
+                </button>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
 
-  // Popula os selects nos formulários
-  populateSelects();
-
-  // Adiciona listeners para os formulários
-  const entryForm = document.getElementById('entry-form'); if (entryForm) entryForm.addEventListener('submit', handleEntrySubmit);
-  const expenseForm = document.getElementById('expense-form'); if (expenseForm) expenseForm.addEventListener('submit', handleExpenseSubmit);
-  const fixedForm = document.getElementById('fixed-expense-form'); if (fixedForm) fixedForm.addEventListener('submit', handleFixedExpenseSubmit);
-
-  // botões export
-  const exportCsvBtn = document.getElementById('export-csv-btn'); if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportMonthCSV);
-  const exportPdfBtn = document.getElementById('export-pdf-btn'); if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportMonthPDF);
-
-  // expor funções para onclick inline (para serem acessíveis no DOM)
-  // window.openTab = openTab; // Não necessário devido à navegação por <a>
-  window.changeMonth = changeMonth;
-  window.saveCardInitialBalances = saveCardInitialBalances;
-  window.removeLogItem = removeLogItem;
-  window.editFixedExpenseValue = editFixedExpenseValue;
-  window.toggleRecurrenceForm = toggleRecurrenceForm;
-  window.exportMonthCSV = exportMonthCSV;
-  window.exportMonthPDF = exportMonthPDF;
-  window.calculateSummary = calculateSummary;
+    document.getElementById('modal-message').textContent = message;
+    modal.style.display = 'flex';
 }
-
-// Executar init quando o DOM estiver pronto.
-// A função `loadData` aguarda a inicialização do Firebase (`window.db` e `window.currentUserId`) para começar a carregar os dados.
-document.addEventListener('DOMContentLoaded', initApp);
