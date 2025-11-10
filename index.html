@@ -13,21 +13,29 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
 
     <script>
-      const firebaseConfig = {
-        apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
-        authDomain: "controle-financeiro-b7880.firebaseapp.com",
-        databaseURL: "https://controle-financeiro-b7880-default-rtdb.firebaseio.com",
-        projectId: "controle-financeiro-b7880",
-        storageBucket: "controle-financeiro-b7880.firebasestorage.app",
-        messagingSenderId: "149823899793",
-        appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
-        // measurementId não é necessário aqui
-      };
+  const firebaseConfig = {
+    apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
+    authDomain: "controle-financeiro-b7880.firebaseapp.com",
+    databaseURL: "https://controle-financeiro-b7880-default-rtdb.firebaseio.com",
+    projectId: "controle-financeiro-b7880",
+    storageBucket: "controle-financeiro-b7880.firebasestorage.app",
+    messagingSenderId: "149823899793",
+    appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
+  };
 
-      // Inicializa o Firebase e obtém a referência do DB
-      const app = firebase.initializeApp(firebaseConfig);
-      const db = app.database();
-    </script>
+  try {
+    // Inicializa o Firebase.
+    firebase.initializeApp(firebaseConfig);
+  } catch (error) {
+    // Esta verificação é crucial para lidar com o erro de "App já inicializado" 
+    // que pode causar o erro de "Identifier 'auth' already declared" em alguns navegadores/ambientes.
+    if (error.code !== 'app/duplicate-app') {
+        console.error("Erro ao inicializar Firebase:", error);
+    }
+  }
+  // Obtém a referência do DB. Usamos firebase.app() para garantir que pegamos a instância inicializada.
+  const db = firebase.database();
+</script>
 </head>
 <body>
     <div class="container">

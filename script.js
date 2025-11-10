@@ -1,4 +1,4 @@
-/* script.js - ATUALIZADO PARA FIREBASE REALTIME DATABASE */
+/* script.js - ATUALIZADO PARA FIREBASE REALTIME DATABASE (VERSÃO DEFINITIVA) */
 
 // -------------------- Config / constantes --------------------
 const CARTAO_IDS = ['💳 Cartão 1', '💳 Cartão 2', '💳 Cartão 3'];
@@ -424,7 +424,7 @@ function editFixedExpenseValue(id, currentValue) {
       const index = fixedExpenses.findIndex(e => e.id === id);
       if (index !== -1) {
         fixedExpenses[index].value = numValue;
-        fixedExpenses[index].isProjected = false;
+        fixedExpenses[index].isProjected = false; // Marca como confirmado/editado
         saveData();
         renderLogs();
         calculateSummary();
@@ -439,7 +439,6 @@ function handleEntrySubmit(e) {
   if (e) e.preventDefault();
   const form = document.getElementById('entry-form');
   if (!form) return;
-
   const newEntry = {
     id: Date.now(),
     date: document.getElementById('entry-date').value,
@@ -516,8 +515,10 @@ function renderLogs() {
   const fixedBody = document.getElementById('fixed-expenses-log-body');
   if (fixedBody) {
     fixedBody.innerHTML = fixedExpenses.map(exp => {
+      // Adiciona um ícone se for projeção
+      const isProjectedIcon = exp.isProjected ? ' <span style="color:var(--cor-destaque); font-size:12px;">(Proj.)</span>' : '';
       const displayDesc = exp.recurrence === 'Parcelada' ? `${exp.description}` : `${exp.description} (${exp.category})`;
-      const valueClickable = `<span onclick="editFixedExpenseValue(${exp.id}, ${exp.value})" style="cursor:pointer; text-decoration:underline;">${formatBRL(exp.value)}</span>`;
+      const valueClickable = `<span onclick="editFixedExpenseValue(${exp.id}, ${exp.value})" style="cursor:pointer; text-decoration:underline;">${formatBRL(exp.value)}</span>${isProjectedIcon}`;
       return `
         <tr>
           <td>${displayDesc}</td>
@@ -539,73 +540,46 @@ function updateMonthDisplay() {
   currentMonthKey = formatMonthKey(currentMonthDate);
 }
 
-// ATENÇÃO: Função de persistência para atualização de parcelas
-// Garante que, ao sair do mês, o plano mestre seja atualizado com o progresso de pagamento.
+// ATENÇÃO: Função de persistência de parcelas (CORRIGIDA)
 async function updateMasterPlansForPreviousMonth(prevMonthKey) {
-  // 1. Carrega os dados fixos do mês anterior para verificar o que foi pago
-  // Usamos o mês-chave anterior (que é o 'currentMonthKey' antes da mudança)
+  // Carrega os dados fixos do mês anterior para verificar o que foi pago
   const prevFixedRef = db.ref(`${FIREBASE_PATH}${prevMonthKey}/fixedExpenses`);
   const prevFixedSnapshot = await prevFixedRef.once('value');
+  const prevMonthData = prevFixedSnapshot.val() || {};
   
-  // Converte o objeto do Firebase de volta para array para facilitar a iteração
-  const prevMonthFixedExpenses = prevFixedSnapshot.val() || {};
-  const paidFixedExpenses = Object.values(prevMonthFixedExpenses); 
-  
-  // 2. Carrega o plano mestre global
+  // Carrega o plano mestre global para atualizar
   const masterPlansRef = getMasterRef('plans');
   const masterPlansSnapshot = await masterPlansRef.once('value');
   let masterPlansToUpdate = masterPlansSnapshot.val() || {};
 
-  // 3. Atualiza os paidInstallments
-  paidFixedExpenses.forEach(expense => {
-    // Apenas para despesas parceladas que não são projeções e têm um masterId
+  // O Firebase retorna objeto, Object.values funciona bem aqui
+  Object.values(prevMonthData).forEach(expense => {
+    // CRUCIAL: Apenas atualiza o plano mestre se for Parcelada E NÃO for projeção (foi confirmado/editado pelo usuário)
     if (expense.recurrence === 'Parcelada' && !expense.isProjected && expense.masterId && expense.installment) {
       const masterPlan = masterPlansToUpdate[expense.masterId];
       if (masterPlan && masterPlan.paidInstallments < expense.installment) {
-        // Atualiza para a parcela mais alta registrada no mês
         masterPlan.paidInstallments = expense.installment;
       }
     }
-    
-    // Adição: Se for Mensal e não for projeção, garante que ele exista no masterPlans
-    // (Útil caso o usuário tenha adicionado o fixo/mensal pela tela de fixos e ele não era um plano mestre)
-    if (expense.recurrence === 'Mensal' && !expense.isProjected && !masterPlansToUpdate[expense.masterId]) {
-         // O 'masterId' é o id do plano mestre, se for único/mensal, ele se refere ao próprio logItem
-         if (expense.recurrence !== 'Unica') {
-             masterPlansToUpdate[expense.masterId] = {
-                 id: expense.masterId,
-                 description: expense.description.replace(/ \(\d+\/\d+\)/, ''), // Remove (X/Y)
-                 category: expense.category,
-                 payment: expense.payment,
-                 value: expense.value,
-                 recurrence: expense.recurrence,
-                 paidInstallments: expense.installment || 0, // 0 para Mensal
-                 totalInstallments: expense.totalInstallments || 0
-             };
-         }
-    }
   });
 
-  // 4. Salva a atualização no Firebase
-  await masterPlansRef.set(masterPlansToUpdate);
-  // 5. Atualiza a variável global também, para consistência imediata
+  // Salva a atualização no Firebase (com await para garantir a persistência antes de carregar o próximo mês)
+  await masterPlansRef.set(masterPlansToUpdate); 
+  // Atualiza a variável global também, para consistência imediata
   masterPlans = masterPlansToUpdate;
 }
 
 // ATENÇÃO: Esta função agora é ASYNC
 async function changeMonth(delta) {
-  // 1. Antes de mudar o mês, persistir o status das parcelas pagas no mês atual
-  // O currentMonthKey aqui se refere ao mês que ESTAMOS SAINDO.
-  await updateMasterPlansForPreviousMonth(currentMonthKey); 
+  // Antes de mudar, atualiza status de parcelas do mês atual
+  await updateMasterPlansForPreviousMonth(currentMonthKey);
 
-  // 2. Mudar o estado do mês
   currentMonthDate.setMonth(currentMonthDate.getMonth() + delta);
   updateMonthDisplay();
   
-  // 3. Esperar os dados do novo mês
+  // Espera os dados do novo mês
   await loadData();
   
-  // 4. Recalcular e renderizar
   projectExpensesForMonth();
   renderLogs();
   calculateSummary();
