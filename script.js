@@ -1,16 +1,13 @@
-/* script.js - completo e corrigido
-   - Carryover do saldo do mês anterior (startingCash / closingCash)
-   - Projeção de fixos/parcelas
-   - Entradas / Despesas / Fixos / Cartões
-   - Gráficos (Chart.js), export CSV e PDF
-   - Compatível com os HTMLs: index.html, entradas.html, despesas.html, fixos.html, cartoes.html
-*/
+/* script.js - ATUALIZADO PARA FIREBASE REALTIME DATABASE */
 
 // -------------------- Config / constantes --------------------
 const CARTAO_IDS = ['💳 Cartão 1', '💳 Cartão 2', '💳 Cartão 3'];
 const DINHEIRO_PIX_IDS = ['💵 Dinheiro', '📲 PIX'];
 const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-const STORAGE_PREFIX = 'finance_app_';
+
+// Novo Path de Armazenamento para Firebase (Substitui o STORAGE_PREFIX)
+// IMPORTANTE: 'db' deve ser inicializado no seu index.html
+const FIREBASE_PATH = 'data/usuario_padrao/';
 
 // listas usadas nos selects
 const LISTAS = {
@@ -59,26 +56,64 @@ function formatMonthKey(date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   return `${year}-${month}`;
 }
-function getMonthKey(type, monthKey = currentMonthKey) {
-  return `${STORAGE_PREFIX}${type}_${monthKey}`;
-}
-function getMasterKey(type) {
-  return `${STORAGE_PREFIX}master_${type}`;
+
+// Funções de referência do Firebase
+function getDataRef(type, monthKey = currentMonthKey) {
+  return db.ref(`${FIREBASE_PATH}${monthKey}/${type}`);
 }
 
-// -------------------- Load / Save --------------------
-function loadData() {
+function getMasterRef(type) {
+  return db.ref(`${FIREBASE_PATH}master_${type}`);
+}
+
+// Função utilitária para converter objetos do Firebase de volta para arrays
+const toArray = (data) => data && typeof data === 'object' && !Array.isArray(data) ? Object.values(data) : (data || []);
+
+// -------------------- Load / Save (FUNÇÕES ATUALIZADAS PARA FIREBASE) --------------------
+
+// A função LoadData agora é ASYNC
+async function loadData() {
   currentMonthKey = formatMonthKey(currentMonthDate);
 
-  entries = JSON.parse(localStorage.getItem(getMonthKey('entries'))) || [];
-  expenses = JSON.parse(localStorage.getItem(getMonthKey('expenses'))) || [];
-  fixedExpenses = JSON.parse(localStorage.getItem(getMonthKey('fixedExpenses'))) || [];
+  // --- Funções de leitura ---
+  const readMonthData = async (type) => {
+    const snapshot = await getDataRef(type).once('value');
+    return snapshot.val() || (type === 'cards' ? {} : (type === 'meta' ? {} : []));
+  };
+  
+  const readMasterData = async (type) => {
+    const snapshot = await getMasterRef(type).once('value');
+    return snapshot.val() || {};
+  };
 
-  masterPlans = JSON.parse(localStorage.getItem(getMasterKey('plans'))) || {};
+  // Carrega todos os dados do mês atual e planos mestres em paralelo
+  let data;
+  try {
+     data = await Promise.all([
+      readMonthData('entries'),
+      readMonthData('expenses'),
+      readMonthData('fixedExpenses'),
+      readMonthData('cards'),
+      readMasterData('plans')
+    ]);
+  } catch(error) {
+    console.error("Erro ao carregar dados do Firebase:", error);
+    alert("Erro ao carregar dados do Firebase. Verifique sua conexão e console de erros.");
+    return; // Interrompe se houver erro
+  }
 
-  cardMonthlyData = JSON.parse(localStorage.getItem(getMonthKey('cards'))) || {};
 
-  // Inicializa estruturas
+  [entries, expenses, fixedExpenses, cardMonthlyData, masterPlans] = data;
+  
+  // Converte de volta para arrays
+  entries = toArray(entries);
+  expenses = toArray(expenses);
+  fixedExpenses = toArray(fixedExpenses);
+  
+  if (!masterPlans || Array.isArray(masterPlans)) masterPlans = {};
+
+
+  // Inicializa estruturas de cartões (se estiverem vazias)
   if (!cardMonthlyData.initialBalances) cardMonthlyData.initialBalances = {};
   CARTAO_IDS.forEach(id => { if (cardMonthlyData.initialBalances[id] === undefined) cardMonthlyData.initialBalances[id] = 0; });
 
@@ -87,31 +122,36 @@ function loadData() {
     CARTAO_IDS.forEach(id => cardMonthlyData.monthlyExpenses[id] = 0);
   }
 
-  // --- Carryover: carregar startingCash do mês anterior se não existir ---
+  // --- Carryover (Lê o 'meta' do mês anterior) ---
   if (cardMonthlyData.startingCash === undefined) {
     const prevMonthDate = new Date(currentMonthDate);
     prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
     const prevKey = formatMonthKey(prevMonthDate);
-    const prevMetaStr = localStorage.getItem(getMonthKey('meta', prevKey));
-    const prevMeta = prevMetaStr ? JSON.parse(prevMetaStr) : null;
+    
+    // Leitura do meta (closingCash) do mês anterior
+    const prevMetaSnapshot = await db.ref(`${FIREBASE_PATH}${prevKey}/meta`).once('value');
+    const prevMeta = prevMetaSnapshot.val() || null;
+    
     cardMonthlyData.startingCash = prevMeta?.closingCash || 0;
   }
 
   if (cardMonthlyData.closingCash === undefined) cardMonthlyData.closingCash = 0;
-
-  saveData(); // garante que estrutura exista
 }
 
+// A função saveData salva no Firebase
 function saveData() {
-  localStorage.setItem(getMonthKey('entries'), JSON.stringify(entries));
-  localStorage.setItem(getMonthKey('expenses'), JSON.stringify(expenses));
-  localStorage.setItem(getMonthKey('fixedExpenses'), JSON.stringify(fixedExpenses));
-  localStorage.setItem(getMonthKey('cards'), JSON.stringify(cardMonthlyData));
-  localStorage.setItem(getMasterKey('plans'), JSON.stringify(masterPlans));
+  // Salva os dados do mês atual
+  getDataRef('entries').set(entries);
+  getDataRef('expenses').set(expenses);
+  getDataRef('fixedExpenses').set(fixedExpenses);
+  getDataRef('cards').set(cardMonthlyData);
+  
+  // Salva planos mestres globalmente
+  getMasterRef('plans').set(masterPlans);
 
   // meta para carryover (fechamento do mês)
   const meta = { closingCash: cardMonthlyData.closingCash || 0 };
-  localStorage.setItem(getMonthKey('meta'), JSON.stringify(meta));
+  getDataRef('meta').set(meta);
 }
 
 // -------------------- Projeção de fixos/parcelados --------------------
@@ -493,29 +533,46 @@ function updateMonthDisplay() {
   currentMonthKey = formatMonthKey(currentMonthDate);
 }
 
-function updateMasterPlansForPreviousMonth(prevMonthKey) {
-  const prevMonthData = JSON.parse(localStorage.getItem(getMonthKey('fixedExpenses', prevMonthKey))) || [];
-  let masterPlansToUpdate = JSON.parse(localStorage.getItem(getMasterKey('plans'))) || {};
+// ATENÇÃO: Função ASYNC para atualizar parcelas no Firebase
+async function updateMasterPlansForPreviousMonth(prevMonthKey) {
+  // Carrega os dados fixos do mês anterior para verificar o que foi pago
+  const prevFixedRef = db.ref(`${FIREBASE_PATH}${prevMonthKey}/fixedExpenses`);
+  const prevFixedSnapshot = await prevFixedRef.once('value');
+  const prevMonthData = prevFixedSnapshot.val() || {};
+  
+  // Carrega o plano mestre global para atualizar
+  const masterPlansRef = getMasterRef('plans');
+  const masterPlansSnapshot = await masterPlansRef.once('value');
+  let masterPlansToUpdate = masterPlansSnapshot.val() || {};
 
-  prevMonthData.forEach(expense => {
+  // Atualiza as parcelas pagas
+  Object.values(prevMonthData).forEach(expense => {
     if (expense.recurrence === 'Parcelada' && expense.masterId && expense.installment) {
       const masterPlan = masterPlansToUpdate[expense.masterId];
+      // Apenas avança se o pagamento for o mais recente (previne retrocessos)
       if (masterPlan && masterPlan.paidInstallments < expense.installment) {
         masterPlan.paidInstallments = expense.installment;
       }
     }
   });
 
-  localStorage.setItem(getMasterKey('plans'), JSON.stringify(masterPlansToUpdate));
+  // Salva a atualização no Firebase
+  masterPlansRef.set(masterPlansToUpdate);
+  // Atualiza a variável global também
+  masterPlans = masterPlansToUpdate;
 }
 
-function changeMonth(delta) {
+// ATENÇÃO: Função ASYNC para navegação entre meses
+async function changeMonth(delta) {
   // Antes de mudar, atualiza status de parcelas do mês atual
-  updateMasterPlansForPreviousMonth(currentMonthKey);
+  await updateMasterPlansForPreviousMonth(currentMonthKey);
 
   currentMonthDate.setMonth(currentMonthDate.getMonth() + delta);
   updateMonthDisplay();
-  loadData();
+  
+  // Espera os dados do novo mês do Firebase
+  await loadData();
+  
   projectExpensesForMonth();
   renderLogs();
   calculateSummary();
@@ -647,7 +704,7 @@ function exportMonthPDF() {
   doc.save(`finance_${currentMonthKey}.pdf`);
 }
 
-// -------------------- Inicialização --------------------
+// -------------------- Inicialização (FUNÇÃO AGORA É ASYNC) --------------------
 function populateSelect(elementId, options) {
   const s = document.getElementById(elementId);
   if (!s) return;
@@ -660,12 +717,13 @@ function populateSelect(elementId, options) {
   });
 }
 
-function initApp() {
+// ATENÇÃO: initApp agora é async para esperar o loadData do Firebase
+async function initApp() {
   // exibir mês atual
   updateMonthDisplay();
 
-  // carrega dados do mês
-  loadData();
+  // carrega dados do mês (AGORA ESPERA PELO FIREBASE)
+  await loadData();
 
   // projeta fixos/parcelas
   projectExpensesForMonth();
