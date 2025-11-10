@@ -1,73 +1,95 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Fixos / Dívidas — Controle Financeiro</title>
-  <link rel="stylesheet" href="style.css">
-</head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Fixos / Dívidas — Controle Financeiro</title>
+  <link rel="stylesheet" href="style.css">
+  
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>     
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
+      authDomain: "controle-financeiro-b7880.firebaseapp.com",
+      databaseURL: "https://controle-financeiro-b7880-default-rtdb.firebaseio.com",
+      projectId: "controle-financeiro-b7880",
+      storageBucket: "controle-financeiro-b7880.firebasestorage.app",
+      messagingSenderId: "149823899793",
+      appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
+    };
+
+    // Inicializa o Firebase (App, Auth e DB)
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = app.database();
+    window.db = db; // Torna o objeto DB acessível ao script.js
+  </script>
+  </head>
 <body>
-  <div class="container">
-    <div class="nav-tabs">
-      <a href="index.html"><button class="tab-button">🏠 Painel</button></a>
-      <a href="entradas.html"><button class="tab-button">➡️ Entradas</button></a>
-      <a href="despesas.html"><button class="tab-button">⬅️ Despesas</button></a>
-      <a href="fixos.html"><button class="tab-button active">📌 Fixos/Dívidas</button></a>
-      <a href="cartoes.html"><button class="tab-button">💳 Cartões</button></a>
-    </div>
+  <div class="container">
+    <div class="nav-tabs">
+      <a href="index.html"><button class="tab-button">🏠 Painel</button></a>
+      <a href="entradas.html"><button class="tab-button">➡️ Entradas</button></a>
+      <a href="despesas.html"><button class="tab-button">⬅️ Despesas</button></a>
+      <a href="fixos.html"><button class="tab-button active">📌 Fixos/Dívidas</button></a>
+      <a href="cartoes.html"><button class="tab-button">💳 Cartões</button></a>
+    </div>
 
-    <div id="fixed-expenses-tab" class="tab-content" style="display:block; margin-top:12px;">
-      <h2>📌 Despesas Fixas e Dívidas</h2>
-      <p>Registre aqui o que é recorrente ou parcelado. O sistema projeta automaticamente nos meses seguintes.</p>
+    <div id="fixed-expenses-tab" class="tab-content" style="display:block; margin-top:12px;">
+      <h2>📌 Despesas Fixas e Dívidas</h2>
+      <p>Registre aqui o que é recorrente ou parcelado. O sistema projeta automaticamente nos meses seguintes.</p>
 
-      <form id="fixed-expense-form">
-        <div class="form-group">
-          <label for="fixed-expense-payment">Forma de Pagamento</label>
-          <select id="fixed-expense-payment" required></select>
-        </div>
-        <div class="form-group">
-          <label for="fixed-expense-category">Categoria</label>
-          <select id="fixed-expense-category" required></select>
-        </div>
-        <div class="form-group">
-          <label for="fixed-expense-description">Descrição</label>
-          <input type="text" id="fixed-expense-description" required>
-        </div>
-        <div class="form-group">
-          <label for="fixed-expense-value">Valor (R$)</label>
-          <input type="number" id="fixed-expense-value" step="0.01" required>
-        </div>
-        <div class="form-group">
-          <label for="fixed-expense-recurrence">Tipo de Recorrência</label>
-          <select id="fixed-expense-recurrence" onchange="toggleRecurrenceForm(this.value)" required>
-            <option value="Unica">Única (Apenas este mês)</option>
-            <option value="Mensal">Mensal (Todo mês)</option>
-            <option value="Parcelada">Parcelada (Dívida)</option>
-          </select>
-        </div>
+      <form id="fixed-expense-form">
+        <div class="form-group">
+          <label for="fixed-expense-payment">Forma de Pagamento</label>
+          <select id="fixed-expense-payment" required></select>
+        </div>
+        <div class="form-group">
+          <label for="fixed-expense-category">Categoria</label>
+          <select id="fixed-expense-category" required></select>
+        </div>
+        <div class="form-group">
+          <label for="fixed-expense-description">Descrição</label>
+          <input type="text" id="fixed-expense-description" required>
+        </div>
+        <div class="form-group">
+          <label for="fixed-expense-value">Valor (R$)</label>
+          <input type="number" id="fixed-expense-value" step="0.01" required>
+        </div>
+        <div class="form-group">
+          <label for="fixed-expense-recurrence">Tipo de Recorrência</label>
+          <select id="fixed-expense-recurrence" onchange="toggleRecurrenceForm(this.value)" required>
+            <option value="Unica">Única (Apenas este mês)</option>
+            <option value="Mensal">Mensal (Todo mês)</option>
+            <option value="Parcelada">Parcelada (Dívida)</option>
+          </select>
+        </div>
 
-        <div id="recurrence-form-fields" class="recurrence-form">
-          <div class="form-group" id="parcelas-group" style="display:none;">
-            <label for="fixed-expense-total-installments">Total de Parcelas</label>
-            <input type="number" id="fixed-expense-total-installments" min="2">
-          </div>
-        </div>
+        <div id="recurrence-form-fields" class="recurrence-form">
+          <div class="form-group" id="parcelas-group" style="display:none;">
+            <label for="fixed-expense-total-installments">Total de Parcelas</label>
+            <input type="number" id="fixed-expense-total-installments" min="2">
+          </div>
+        </div>
 
-        <button type="submit" class="submit-btn">Adicionar Despesa Fixa/Dívida</button>
-      </form>
+        <button type="submit" class="submit-btn">Adicionar Despesa Fixa/Dívida</button>
+      </form>
 
-      <div class="log-table-container">
-        <h3>Resumo de Despesas Fixas do Mês (<span id="current-month-log-display"></span>)</h3>
-        <p style="font-size:12px; color:var(--cor-destaque)">*</p>
-        <table class="log-table">
-          <thead>
-            <tr><th>Descrição/Parcela</th><th>Valor</th><th>Forma</th><th>Ação</th></tr>
-          </thead>
-          <tbody id="fixed-expenses-log-body"></tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+      <div class="log-table-container">
+        <h3>Resumo de Despesas Fixas do Mês (<span id="current-month-log-display"></span>)</h3>
+        <p style="font-size:12px; color:var(--cor-destaque)">*</p>
+        <table class="log-table">
+          <thead>
+            <tr><th>Descrição/Parcela</th><th>Valor</th><th>Forma</th><th>Ação</th></tr>
+          </thead>
+          <tbody id="fixed-expenses-log-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
-  <script src="script.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
