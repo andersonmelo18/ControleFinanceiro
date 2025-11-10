@@ -1,7 +1,8 @@
+// CORREÇÃO: Usando o caminho 'firestore/index.js' para garantir que o serviço esteja disponível
 import { 
     collection, addDoc, onSnapshot, query, where, doc, deleteDoc, updateDoc, 
     getDocs, getDoc, runTransaction, setDoc 
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/11.6.1/firestore/index.js";
 
 // -------------------- Config / Constantes --------------------
 const CARTAO_IDS = ['💳 Cartão 1', '💳 Cartão 2', '💳 Cartão 3'];

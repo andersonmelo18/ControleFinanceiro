@@ -7,7 +7,8 @@
   
   <script type="module">
       import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-      import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+      // CORREÇÃO: Usando o caminho 'firestore/index.js' para garantir que o serviço esteja disponível
+      import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firestore/index.js";
       import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
       
       const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { projectId: 'default-project-id' };
