@@ -1,4 +1,4 @@
-/* script.js - ATUALIZADO PARA FIREBASE REALTIME DATABASE (VERSÃO DEFINITIVA) */
+/* script.js - VERSÃO DEFINITIVA COM FIREBASE E CORREÇÕES DE BUGS */
 
 // -------------------- Config / constantes --------------------
 const CARTAO_IDS = ['💳 Cartão 1', '💳 Cartão 2', '💳 Cartão 3'];
@@ -9,7 +9,6 @@ const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho",
 const FIREBASE_PATH = 'data/usuario_padrao/'; // Usamos 'data/' para separação e 'usuario_padrao/' para simular login
 
 // listas usadas nos selects
-// ... (O RESTO DAS LISTAS PERMANECE IGUAL)
 const LISTAS = {
   plataformas: [
     { value: '🏍️ Uber Moto', label: '🏍️ Uber Moto' },
@@ -59,29 +58,39 @@ function formatMonthKey(date) {
 
 // Funções de referência do Firebase
 function getDataRef(type, monthKey = currentMonthKey) {
+  // ATENÇÃO: 'db' é uma variável global que DEVE ser definida no index.html ANTES deste script.
+  if (typeof db === 'undefined') {
+    console.error("Erro: 'db' não está definido. Verifique a inicialização do Firebase no index.html.");
+    return;
+  }
   return db.ref(`${FIREBASE_PATH}${monthKey}/${type}`);
 }
 
 function getMasterRef(type) {
+  if (typeof db === 'undefined') return;
   return db.ref(`${FIREBASE_PATH}master_${type}`);
 }
 
 // -------------------- Load / Save (FUNÇÕES ATUALIZADAS) --------------------
 
-// A função LoadData agora é ASYNC
+// Função de apoio para converter dados do Firebase (objeto com chaves numéricas) para array
+const toArray = (data) => data && typeof data === 'object' && !Array.isArray(data) ? Object.values(data) : (data || []);
+
 async function loadData() {
   currentMonthKey = formatMonthKey(currentMonthDate);
 
   // --- Funções de leitura ---
   const readMonthData = async (type) => {
-    const snapshot = await getDataRef(type).once('value');
-    // Se for o array de logs (entries, expenses, fixedExpenses), pode vir como objeto no Firebase.
-    // Retorna o valor do banco de dados, ou um array/objeto vazio se não existir
+    const ref = getDataRef(type);
+    if (!ref) return type === 'cards' ? {} : (type === 'meta' ? {} : []); // Retorna vazia se ref não for criada
+    const snapshot = await ref.once('value');
     return snapshot.val() || (type === 'cards' ? {} : (type === 'meta' ? {} : []));
   };
   
   const readMasterData = async (type) => {
-    const snapshot = await getMasterRef(type).once('value');
+    const ref = getMasterRef(type);
+    if (!ref) return {};
+    const snapshot = await ref.once('value');
     return snapshot.val() || {};
   };
 
@@ -96,17 +105,14 @@ async function loadData() {
       readMasterData('plans')
     ]);
   } catch(error) {
-    console.error("Erro ao carregar dados do Firebase:", error);
-    alert("Erro ao carregar dados do Firebase. Verifique sua conexão e console de erros.");
+    console.error("Erro ao carregar dados do Firebase. Verifique REGRAS de segurança e CONEXÃO.", error);
     return; // Para o carregamento
   }
 
 
   [entries, expenses, fixedExpenses, cardMonthlyData, masterPlans] = data;
   
-  // O Realtime Database armazena arrays como objetos se os índices forem números. 
-  // Converte de volta para array, ignorando chaves se o resultado for um objeto.
-  const toArray = (data) => data && typeof data === 'object' && !Array.isArray(data) ? Object.values(data) : (data || []);
+  // Conversão de Firebase Object -> Array
   entries = toArray(entries);
   expenses = toArray(expenses);
   fixedExpenses = toArray(fixedExpenses);
@@ -115,7 +121,7 @@ async function loadData() {
   if (!masterPlans || Array.isArray(masterPlans)) masterPlans = {};
 
 
-  // Inicializa estruturas (MANTÉM a lógica original de inicialização)
+  // Inicializa estruturas de cartões (para que renderCardControls funcione)
   if (!cardMonthlyData.initialBalances) cardMonthlyData.initialBalances = {};
   CARTAO_IDS.forEach(id => { if (cardMonthlyData.initialBalances[id] === undefined) cardMonthlyData.initialBalances[id] = 0; });
 
@@ -134,35 +140,37 @@ async function loadData() {
     const prevMetaSnapshot = await db.ref(`${FIREBASE_PATH}${prevKey}/meta`).once('value');
     const prevMeta = prevMetaSnapshot.val() || null;
     
+    // Define o saldo inicial do mês atual com o saldo final do mês anterior, ou 0
     cardMonthlyData.startingCash = prevMeta?.closingCash || 0;
   }
 
+  // Garante que closingCash existe, será atualizado em calculateSummary
   if (cardMonthlyData.closingCash === undefined) cardMonthlyData.closingCash = 0;
 }
 
-// A função saveData salva no Firebase
 function saveData() {
   // Salva os dados do mês atual
-  getDataRef('entries').set(entries);
-  getDataRef('expenses').set(expenses);
-  getDataRef('fixedExpenses').set(fixedExpenses);
-  getDataRef('cards').set(cardMonthlyData);
+  getDataRef('entries')?.set(entries);
+  getDataRef('expenses')?.set(expenses);
+  getDataRef('fixedExpenses')?.set(fixedExpenses);
+  getDataRef('cards')?.set(cardMonthlyData);
   
   // Salva planos mestres globalmente
-  getMasterRef('plans').set(masterPlans);
+  getMasterRef('plans')?.set(masterPlans);
 
   // meta para carryover (fechamento do mês)
   const meta = { closingCash: cardMonthlyData.closingCash || 0 };
-  getDataRef('meta').set(meta);
+  getDataRef('meta')?.set(meta);
 }
 
 // -------------------- Projeção de fixos/parcelados --------------------
 function projectExpensesForMonth() {
   // se o usuário já adicionou fixos para o mês, não sobrescrever
   if (fixedExpenses.length > 0) return;
-// ... (O RESTO DA FUNÇÃO projectExpensesForMonth PERMANECE IGUAL)
+
   const projectedExpenses = [];
 
+  // Projeção Mensal
   Object.values(masterPlans)
     .filter(plan => plan.recurrence === 'Mensal')
     .forEach(plan => {
@@ -174,10 +182,11 @@ function projectExpensesForMonth() {
         value: plan.value,
         recurrence: 'Mensal',
         masterId: plan.id,
-        isProjected: true
+        isProjected: true // Sinaliza que é uma projeção, não um item pago
       });
     });
 
+  // Projeção Parcelada
   Object.values(masterPlans)
     .filter(plan => plan.recurrence === 'Parcelada')
     .forEach(plan => {
@@ -203,7 +212,6 @@ function projectExpensesForMonth() {
 }
 
 // -------------------- Cartões --------------------
-// ... (O RESTO DAS FUNÇÕES PERMANECE IGUAL)
 function renderCardControls() {
   const container = document.getElementById('card-list');
   if (!container) return;
@@ -212,7 +220,8 @@ function renderCardControls() {
 
   CARTAO_IDS.forEach(id => {
     const initialBalance = cardMonthlyData.initialBalances?.[id] || 0;
-    const totalExpenses = cardMonthlyData.monthlyExpenses?.[id] || 0;
+    // O monthlyExpenses é calculado dentro de calculateSummary
+    const totalExpenses = cardMonthlyData.monthlyExpenses?.[id] || 0; 
     const totalFatura = initialBalance + totalExpenses;
     totalFaturas += totalFatura;
 
@@ -245,7 +254,7 @@ function saveCardInitialBalances() {
 
 // -------------------- Cálculos & Resumo --------------------
 function calculateSummary() {
-// ... (O RESTO DA FUNÇÃO calculateSummary PERMANECE IGUAL)
+  // Inicialização de totais
   let totalEntradas = 0;
   let totalKm = 0;
   let totalHours = 0;
@@ -253,19 +262,20 @@ function calculateSummary() {
   let totalDespesasCartao = 0;
   let totalDespesasFixas = 0;
 
-  // reset card monthly expenses
+  // reset card monthly expenses para recalculo
   cardMonthlyData.monthlyExpenses = {};
   CARTAO_IDS.forEach(id => cardMonthlyData.monthlyExpenses[id] = 0);
 
-  // entradas
+  // 1. Entradas
   entries.forEach(entry => {
     totalEntradas += entry.value || 0;
     totalKm += entry.km || 0;
     totalHours += entry.hours || 0;
-    totalDespesasDinheiroPix += (entry.gas || 0) + (entry.otherCosts || 0);
+    // Gastos de entradas em Dinheiro/PIX (Combustível, Outros Custos)
+    totalDespesasDinheiroPix += (entry.gas || 0) + (entry.otherCosts || 0); 
   });
 
-  // despesas variáveis
+  // 2. Despesas variáveis
   expenses.forEach(exp => {
     const value = exp.value || 0;
     if (DINHEIRO_PIX_IDS.includes(exp.payment)) {
@@ -278,10 +288,10 @@ function calculateSummary() {
     }
   });
 
-  // despesas fixas (inclui projeções)
+  // 3. Despesas fixas (inclui projeções)
   fixedExpenses.forEach(exp => {
     const value = exp.value || 0;
-    totalDespesasFixas += value;
+    totalDespesasFixas += value; // Contabiliza no total de fixas
     if (DINHEIRO_PIX_IDS.includes(exp.payment)) {
       totalDespesasDinheiroPix += value;
     } else if (CARTAO_IDS.includes(exp.payment)) {
@@ -296,14 +306,15 @@ function calculateSummary() {
   const totalDespesasVariaveis = totalDespesasGeral - totalDespesasFixas;
   const lucroLiquido = totalEntradas - totalDespesasGeral;
 
-  // carryover: startingCash (saldo carregado do mês anterior)
+  // Carryover: startingCash (saldo carregado do mês anterior)
   const startingCash = cardMonthlyData.startingCash || 0;
+  // Saldo em Caixa = Saldo Inicial + Entradas em Dinheiro - Despesas em Dinheiro/PIX
   const saldoEmCaixa = startingCash + totalEntradas - totalDespesasDinheiroPix;
 
   // salvar closingCash do mês atual para o próximo mês ler
   cardMonthlyData.closingCash = saldoEmCaixa;
 
-  // render no dashboard (se existir)
+  // Renderização no dashboard (index.html)
   const elTotalEntradas = document.querySelector('#total-entradas .value');
   const elTotalDespesas = document.querySelector('#total-despesas .value');
   const elLucro = document.querySelector('#lucro-liquido .value');
@@ -347,7 +358,6 @@ function calculateSummary() {
 
 // -------------------- Inserção de dados --------------------
 function removeLogItem(id, type) {
-// ... (O RESTO DAS FUNÇÕES DE INSERÇÃO PERMANECE IGUAL)
   if (!confirm('Tem certeza que deseja remover este item?')) return;
   if (type === 'entry') entries = entries.filter(i => i.id !== id);
   if (type === 'expense') expenses = expenses.filter(i => i.id !== id);
@@ -379,7 +389,7 @@ function handleFixedExpenseSubmit(e) {
   const recurrence = document.getElementById('fixed-expense-recurrence').value;
   const totalInstallments = parseInt(document.getElementById('fixed-expense-total-installments').value || '0');
   const value = parseFloat(document.getElementById('fixed-expense-value').value || '0');
-  const masterId = Date.now();
+  const masterId = Date.now(); // ID único para o plano mestre
 
   const newFixedExpenseMaster = {
     id: masterId,
@@ -392,20 +402,22 @@ function handleFixedExpenseSubmit(e) {
     totalInstallments: (recurrence === 'Parcelada' ? totalInstallments : 0)
   };
 
+  // Salva no plano mestre se for recorrente
   if (recurrence !== 'Unica') {
     masterPlans[masterId] = newFixedExpenseMaster;
   }
 
+  // Cria o item de log para o mês atual
   const logItem = {
     ...newFixedExpenseMaster,
-    id: Date.now() + Math.random(),
+    id: Date.now() + Math.random(), // ID único para o log do mês
     masterId: masterId,
-    isProjected: false
+    isProjected: false // É um item real adicionado, não uma projeção
   };
 
   if (recurrence === 'Parcelada') {
     logItem.description = `${logItem.description} (1/${totalInstallments})`;
-    logItem.installment = 1;
+    logItem.installment = 1; // Registra qual parcela é
   }
 
   fixedExpenses.push(logItem);
@@ -477,7 +489,6 @@ function handleExpenseSubmit(e) {
 
 // -------------------- Render logs / tabelas --------------------
 function renderLogs() {
-// ... (O RESTO DAS FUNÇÕES DE RENDERIZAÇÃO PERMANECE IGUAL)
   // atualizar display do mês na aba fixos
   const monthDisplay = document.getElementById('current-month-display');
   const elMonthLog = document.getElementById('current-month-log-display');
@@ -518,6 +529,7 @@ function renderLogs() {
       // Adiciona um ícone se for projeção
       const isProjectedIcon = exp.isProjected ? ' <span style="color:var(--cor-destaque); font-size:12px;">(Proj.)</span>' : '';
       const displayDesc = exp.recurrence === 'Parcelada' ? `${exp.description}` : `${exp.description} (${exp.category})`;
+      // Valor clicável para edição
       const valueClickable = `<span onclick="editFixedExpenseValue(${exp.id}, ${exp.value})" style="cursor:pointer; text-decoration:underline;">${formatBRL(exp.value)}</span>${isProjectedIcon}`;
       return `
         <tr>
@@ -540,57 +552,57 @@ function updateMonthDisplay() {
   currentMonthKey = formatMonthKey(currentMonthDate);
 }
 
-// ATENÇÃO: Função de persistência de parcelas (CORRIGIDA)
+// CRÍTICO: Função de persistência de parcelas para o mês anterior
 async function updateMasterPlansForPreviousMonth(prevMonthKey) {
-  // Carrega os dados fixos do mês anterior para verificar o que foi pago
   const prevFixedRef = db.ref(`${FIREBASE_PATH}${prevMonthKey}/fixedExpenses`);
   const prevFixedSnapshot = await prevFixedRef.once('value');
   const prevMonthData = prevFixedSnapshot.val() || {};
   
-  // Carrega o plano mestre global para atualizar
   const masterPlansRef = getMasterRef('plans');
   const masterPlansSnapshot = await masterPlansRef.once('value');
   let masterPlansToUpdate = masterPlansSnapshot.val() || {};
 
-  // O Firebase retorna objeto, Object.values funciona bem aqui
   Object.values(prevMonthData).forEach(expense => {
-    // CRUCIAL: Apenas atualiza o plano mestre se for Parcelada E NÃO for projeção (foi confirmado/editado pelo usuário)
+    // Apenas atualiza o plano mestre se for Parcelada E NÃO for projeção (foi confirmado/editado pelo usuário)
     if (expense.recurrence === 'Parcelada' && !expense.isProjected && expense.masterId && expense.installment) {
       const masterPlan = masterPlansToUpdate[expense.masterId];
+      // Atualiza apenas se a parcela paga registrada for maior que a anterior (evita retrocessos)
       if (masterPlan && masterPlan.paidInstallments < expense.installment) {
         masterPlan.paidInstallments = expense.installment;
       }
     }
   });
 
-  // Salva a atualização no Firebase (com await para garantir a persistência antes de carregar o próximo mês)
+  // Salva a atualização no Firebase (aguarda o término)
   await masterPlansRef.set(masterPlansToUpdate); 
-  // Atualiza a variável global também, para consistência imediata
+  // Atualiza a variável global
   masterPlans = masterPlansToUpdate;
 }
 
-// ATENÇÃO: Esta função agora é ASYNC
+// CRÍTICO: Função de navegação agora é ASYNC
 async function changeMonth(delta) {
-  // Antes de mudar, atualiza status de parcelas do mês atual
+  // 1. Antes de mudar, ATUALIZA status de parcelas do mês atual (aguarda)
   await updateMasterPlansForPreviousMonth(currentMonthKey);
 
+  // 2. Muda o estado do mês
   currentMonthDate.setMonth(currentMonthDate.getMonth() + delta);
   updateMonthDisplay();
   
-  // Espera os dados do novo mês
+  // 3. Espera os dados do novo mês (aguarda)
   await loadData();
   
+  // 4. Recalcula e renderiza
   projectExpensesForMonth();
   renderLogs();
   calculateSummary();
 }
 
 // -------------------- Resumo tabela --------------------
-// ... (O RESTO DAS FUNÇÕES PERMANECE IGUAL)
 function renderSummaryTable() {
   const container = document.getElementById('monthly-summary-table');
   if (!container) return;
-// ...
+
+  // Recalculo dos totais (baseado em calculateSummary)
   let totalEntradas = 0;
   let totalDespesasDinheiroPix = 0;
   let totalDespesasCartao = 0;
@@ -631,7 +643,6 @@ function renderSummaryTable() {
 }
 
 // -------------------- Gráficos (Chart.js) --------------------
-// ... (O RESTO DAS FUNÇÕES PERMANECE IGUAL)
 function renderCharts() {
   const donutCtx = document.getElementById('chart-donut')?.getContext?.('2d');
   const barCtx = document.getElementById('chart-bar')?.getContext?.('2d');
@@ -675,7 +686,6 @@ function renderCharts() {
 }
 
 // -------------------- Export CSV / PDF --------------------
-// ... (O RESTO DAS FUNÇÕES PERMANECE IGUAL)
 function exportMonthCSV() {
   const rows = [];
   rows.push(['Tipo','Data','Descrição','Categoria/Plataforma','Pagamento','Valor']);
@@ -714,7 +724,7 @@ function exportMonthPDF() {
   doc.save(`finance_${currentMonthKey}.pdf`);
 }
 
-// -------------------- Inicialização (FUNÇÃO AGORA É ASYNC) --------------------
+// -------------------- Inicialização --------------------
 function populateSelect(elementId, options) {
   const s = document.getElementById(elementId);
   if (!s) return;
@@ -727,7 +737,7 @@ function populateSelect(elementId, options) {
   });
 }
 
-// ATENÇÃO: initApp agora é async para esperar o loadData do Firebase
+// CRÍTICO: initApp agora é async para esperar o loadData do Firebase
 async function initApp() {
   // exibir mês atual
   updateMonthDisplay();
@@ -742,7 +752,7 @@ async function initApp() {
   calculateSummary();
   renderLogs();
 
-  // popula selects quando existirem
+  // popula selects
   populateSelect('entry-platform', LISTAS.plataformas);
   populateSelect('expense-category', LISTAS.categorias);
   populateSelect('expense-payment', LISTAS.pagamentos);
@@ -758,12 +768,12 @@ async function initApp() {
   const entryForm = document.getElementById('entry-form'); if (entryForm) entryForm.addEventListener('submit', handleEntrySubmit);
   const expenseForm = document.getElementById('expense-form'); if (expenseForm) expenseForm.addEventListener('submit', handleExpenseSubmit);
   const fixedForm = document.getElementById('fixed-expense-form'); if (fixedForm) fixedForm.addEventListener('submit', handleFixedExpenseSubmit);
-
-  // botões export
+  
+  // listeners de botões (index.html)
   const exportCsvBtn = document.getElementById('export-csv-btn'); if (exportCsvBtn) exportCsvBtn.addEventListener('click', exportMonthCSV);
   const exportPdfBtn = document.getElementById('export-pdf-btn'); if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportMonthPDF);
 
-  // expor funções para onclick inline
+  // expor funções para onclick inline (CRÍTICO para botões em HTML)
   window.openTab = openTab;
   window.changeMonth = changeMonth;
   window.saveCardInitialBalances = saveCardInitialBalances;
@@ -778,7 +788,7 @@ async function initApp() {
 // executar init quando DOM pronto
 document.addEventListener('DOMContentLoaded', initApp);
 
-// -------------------- Função de apoio para abas (quando necessário) --------------------
+// -------------------- Função de apoio para abas --------------------
 function openTab(tabId, button) {
   document.querySelectorAll('.tab-content')?.forEach(tab => tab.style.display = 'none');
   document.querySelectorAll('.tab-button')?.forEach(btn => btn.classList.remove('active'));

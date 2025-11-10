@@ -6,39 +6,72 @@
     <title>Painel — Controle Financeiro Autônomo</title>
 
     <link rel="stylesheet" href="style.css">
+    <!-- Bibliotecas de Terceiros -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <!-- Configuração e Autenticação Firebase (Firestore) -->
+    <script type="module">
+        // Importações do Firebase v11.6.1 (Modular)
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    <script>
-  const firebaseConfig = {
-    apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
-    authDomain: "controle-financeiro-b7880.firebaseapp.com",
-    databaseURL: "https://controle-financeiro-b7880-default-rtdb.firebaseio.com",
-    projectId: "controle-financeiro-b7880",
-    storageBucket: "controle-financeiro-b7880.firebasestorage.app",
-    messagingSenderId: "149823899793",
-    appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
-  };
+        // Variáveis globais do ambiente Canvas (MANDATÓRIO)
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-  try {
-    // Inicializa o Firebase.
-    firebase.initializeApp(firebaseConfig);
-  } catch (error) {
-    // Esta verificação é crucial para lidar com o erro de "App já inicializado" 
-    // que pode causar o erro de "Identifier 'auth' already declared" em alguns navegadores/ambientes.
-    if (error.code !== 'app/duplicate-app') {
-        console.error("Erro ao inicializar Firebase:", error);
-    }
-  }
-  // Obtém a referência do DB. Usamos firebase.app() para garantir que pegamos a instância inicializada.
-  const db = firebase.database();
-</script>
+        // Inicialização
+        const app = initializeApp(firebaseConfig);
+        window.db = getFirestore(app); // Expondo db globalmente para script.js
+        window.auth = getAuth(app); // Expondo auth globalmente para script.js
+        
+        // Expor para depuração
+        setLogLevel('debug');
+
+        // Autenticação
+        async function authenticate() {
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(window.auth, initialAuthToken);
+                    console.log("Usuário autenticado com token personalizado.");
+                } else {
+                    await signInAnonymously(window.auth);
+                    console.log("Usuário autenticado anonimamente.");
+                }
+            } catch (error) {
+                console.error("Erro na autenticação Firebase:", error);
+                // Tenta fallback para anônimo se o custom token falhar
+                try {
+                    await signInAnonymously(window.auth);
+                } catch(e) {
+                    console.error("Erro no fallback de autenticação anônima:", e);
+                }
+            }
+        }
+        
+        authenticate();
+
+        // Monitorar e exibir o UID do usuário
+        onAuthStateChanged(window.auth, (user) => {
+            const userIdDisplay = document.getElementById('user-id-display');
+            let userId = 'Desconectado';
+            if (user) {
+                userId = user.uid;
+                window.currentUserId = user.uid; // Define o ID para uso no script.js
+            } else {
+                // Se a autenticação falhar, usa um ID temporário até o script.js gerar um UUID
+                window.currentUserId = null;
+            }
+            if (userIdDisplay) {
+                userIdDisplay.textContent = userId;
+            }
+        });
+    </script>
 </head>
 <body>
     <div class="container">
+        <!-- Navegação -->
         <div class="nav-tabs">
             <a href="index.html"><button class="tab-button active">🏠 Painel</button></a>
             <a href="entradas.html"><button class="tab-button">➡️ Entradas</button></a>
@@ -46,6 +79,11 @@
             <a href="fixos.html"><button class="tab-button">📌 Fixos/Dívidas</button></a>
             <a href="cartoes.html"><button class="tab-button">💳 Cartões</button></a>
         </div>
+        
+        <!-- Display do ID do Usuário (Obrigatório para apps multiusuário) -->
+        <p class="small" style="text-align:right; margin-top:10px; color:var(--cor-destaque);">
+            ID do Usuário: <span id="user-id-display" style="font-weight:bold;">Carregando...</span>
+        </p>
 
         <div id="dashboard-tab" class="tab-content" style="display:block">
             <div class="month-selector">
@@ -110,9 +148,9 @@
                 </div>
             </div>
         </div>
-
     </div>
 
-    <script src="script.js"></script>
+    <!-- O script principal (script.js) deve ser carregado como type="module" se for usar funções exportadas do Firebase -->
+    <script type="module" src="script.js"></script>
 </body>
 </html>
