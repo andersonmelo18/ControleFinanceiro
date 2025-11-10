@@ -1,12 +1,17 @@
-/* script.js - VERSÃO DEFINITIVA COM FIREBASE E CORREÇÕES DE BUGS */
+// script.js - VERSÃO DEFINITIVA COM FIRESTORE
+
+// Importações do Firebase Firestore (necessário pois o script.js é carregado como module)
+import { 
+    doc, 
+    getDoc, 
+    setDoc, 
+    writeBatch 
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // -------------------- Config / constantes --------------------
 const CARTAO_IDS = ['💳 Cartão 1', '💳 Cartão 2', '💳 Cartão 3'];
 const DINHEIRO_PIX_IDS = ['💵 Dinheiro', '📲 PIX'];
 const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
-
-// Novo Path de Armazenamento para Firebase (Substitui o STORAGE_PREFIX)
-const FIREBASE_PATH = 'data/usuario_padrao/'; // Usamos 'data/' para separação e 'usuario_padrao/' para simular login
 
 // listas usadas nos selects
 const LISTAS = {
@@ -33,14 +38,14 @@ const LISTAS = {
 };
 
 // -------------------- Estado (mudará por mês) --------------------
-let currentMonthDate = new Date(); // inicializa com mês atual
+let currentMonthDate = new Date(); 
 let currentMonthKey = formatMonthKey(currentMonthDate);
 
-let entries = [];       // lista de entradas do mês
-let expenses = [];      // despesas variáveis do mês
-let fixedExpenses = []; // despesas fixas / projeções do mês
-let cardMonthlyData = {}; // { initialBalances: {...}, monthlyExpenses: {...}, startingCash, closingCash }
-let masterPlans = {};   // plano mestre para fixos/parcelados
+let entries = [];       
+let expenses = [];      
+let fixedExpenses = []; 
+let cardMonthlyData = {}; 
+let masterPlans = {};   
 
 // Chart instances
 let chartDonut = null;
@@ -56,116 +61,120 @@ function formatMonthKey(date) {
   return `${year}-${month}`;
 }
 
-// Funções de referência do Firebase
-function getDataRef(type, monthKey = currentMonthKey) {
-  // ATENÇÃO: 'db' é uma variável global que DEVE ser definida no index.html ANTES deste script.
-  if (typeof db === 'undefined') {
-    console.error("Erro: 'db' não está definido. Verifique a inicialização do Firebase no index.html.");
-    return;
+// Helper para gerar IDs únicos (Firestore usa strings)
+function generateUniqueId() {
+    return `id_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+}
+
+// -------------------- Utilitários de Firestore --------------------
+
+// Acessa o documento do mês atual (e.g., users/uid/months/2025-11)
+function getMonthDocRef(monthKey = currentMonthKey) {
+  if (typeof db === 'undefined' || !window.currentUserId) {
+    console.error("Erro: Firestore (db) ou ID do Usuário não está disponível.");
+    return null;
   }
-  return db.ref(`${FIREBASE_PATH}${monthKey}/${type}`);
+  // Estrutura: Coleção 'users' -> Documento '{userId}' -> Subcoleção 'months' -> Documento '{monthKey}'
+  return doc(db, 'users', window.currentUserId, 'months', monthKey);
 }
 
-function getMasterRef(type) {
-  if (typeof db === 'undefined') return;
-  return db.ref(`${FIREBASE_PATH}master_${type}`);
+// Acessa o documento de planos mestres (e.g., users/uid/masterData/plans)
+function getMasterPlansDocRef() {
+  if (typeof db === 'undefined' || !window.currentUserId) {
+    console.error("Erro: Firestore (db) ou ID do Usuário não está disponível.");
+    return null;
+  }
+  // Estrutura: Coleção 'users' -> Documento '{userId}' -> Subcoleção 'masterData' -> Documento 'plans'
+  return doc(db, 'users', window.currentUserId, 'masterData', 'plans');
 }
 
-// -------------------- Load / Save (FUNÇÕES ATUALIZADAS) --------------------
 
-// Função de apoio para converter dados do Firebase (objeto com chaves numéricas) para array
-const toArray = (data) => data && typeof data === 'object' && !Array.isArray(data) ? Object.values(data) : (data || []);
+// -------------------- Load / Save (FUNÇÕES ATUALIZADAS PARA FIRESTORE) --------------------
 
 async function loadData() {
   currentMonthKey = formatMonthKey(currentMonthDate);
+  const monthDocRef = getMonthDocRef();
+  const masterPlansDocRef = getMasterPlansDocRef();
 
-  // --- Funções de leitura ---
-  const readMonthData = async (type) => {
-    const ref = getDataRef(type);
-    if (!ref) return type === 'cards' ? {} : (type === 'meta' ? {} : []); // Retorna vazia se ref não for criada
-    const snapshot = await ref.once('value');
-    return snapshot.val() || (type === 'cards' ? {} : (type === 'meta' ? {} : []));
-  };
-  
-  const readMasterData = async (type) => {
-    const ref = getMasterRef(type);
-    if (!ref) return {};
-    const snapshot = await ref.once('value');
-    return snapshot.val() || {};
-  };
+  if (!monthDocRef || !masterPlansDocRef) {
+      // Se não há referência, o usuário está desconectado ou o Firebase falhou.
+      // Retorna para que o initApp use dados vazios.
+      return; 
+  }
 
-  // Carrega todos os dados do mês atual e planos mestres
-  let data;
   try {
-     data = await Promise.all([
-      readMonthData('entries'),
-      readMonthData('expenses'),
-      readMonthData('fixedExpenses'),
-      readMonthData('cards'),
-      readMasterData('plans')
-    ]);
+    // 1. Carregar dados do mês atual
+    const monthSnapshot = await getDoc(monthDocRef);
+    const monthData = monthSnapshot.data() || {};
+    
+    entries = monthData.entries || [];
+    expenses = monthData.expenses || [];
+    fixedExpenses = monthData.fixedExpenses || [];
+    cardMonthlyData = monthData.cards || {};
+    const meta = monthData.meta || {};
+
+    // 2. Carregar planos mestres
+    const masterSnapshot = await getDoc(masterPlansDocRef);
+    const masterData = masterSnapshot.data() || {};
+    masterPlans = masterData.masterPlans || {};
+
+    // Inicializa estruturas de cartões
+    if (!cardMonthlyData.initialBalances) cardMonthlyData.initialBalances = {};
+    CARTAO_IDS.forEach(id => { if (cardMonthlyData.initialBalances[id] === undefined) cardMonthlyData.initialBalances[id] = 0; });
+    if (!cardMonthlyData.monthlyExpenses) {
+      cardMonthlyData.monthlyExpenses = {};
+      CARTAO_IDS.forEach(id => cardMonthlyData.monthlyExpenses[id] = 0);
+    }
+
+    // 3. Carryover (Ler o saldo final do mês anterior)
+    if (cardMonthlyData.startingCash === undefined) {
+      const prevMonthDate = new Date(currentMonthDate);
+      prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
+      const prevKey = formatMonthKey(prevMonthDate);
+      
+      const prevMonthDocRef = getMonthDocRef(prevKey);
+      const prevMonthSnapshot = await getDoc(prevMonthDocRef);
+      const prevMonthMeta = prevMonthSnapshot.data()?.meta || null;
+      
+      // Define o saldo inicial do mês atual com o saldo final do mês anterior, ou 0
+      cardMonthlyData.startingCash = prevMonthMeta?.closingCash || 0;
+    }
+    
+    // Garante que closingCash existe
+    cardMonthlyData.closingCash = meta.closingCash || 0;
+
   } catch(error) {
-    console.error("Erro ao carregar dados do Firebase. Verifique REGRAS de segurança e CONEXÃO.", error);
-    return; // Para o carregamento
+    console.error("Erro ao carregar dados do Firestore. Verifique as regras de segurança.", error);
+    // Em caso de erro, garante arrays vazios para evitar falhas no resto do script
+    entries = []; expenses = []; fixedExpenses = []; cardMonthlyData = {}; masterPlans = {};
   }
-
-
-  [entries, expenses, fixedExpenses, cardMonthlyData, masterPlans] = data;
-  
-  // Conversão de Firebase Object -> Array
-  entries = toArray(entries);
-  expenses = toArray(expenses);
-  fixedExpenses = toArray(fixedExpenses);
-  
-  // Garante que masterPlans seja um objeto (para iterar)
-  if (!masterPlans || Array.isArray(masterPlans)) masterPlans = {};
-
-
-  // Inicializa estruturas de cartões (para que renderCardControls funcione)
-  if (!cardMonthlyData.initialBalances) cardMonthlyData.initialBalances = {};
-  CARTAO_IDS.forEach(id => { if (cardMonthlyData.initialBalances[id] === undefined) cardMonthlyData.initialBalances[id] = 0; });
-
-  if (!cardMonthlyData.monthlyExpenses) {
-    cardMonthlyData.monthlyExpenses = {};
-    CARTAO_IDS.forEach(id => cardMonthlyData.monthlyExpenses[id] = 0);
-  }
-
-  // --- Carryover (Agora assíncrono e lê o 'meta' do mês anterior) ---
-  if (cardMonthlyData.startingCash === undefined) {
-    const prevMonthDate = new Date(currentMonthDate);
-    prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
-    const prevKey = formatMonthKey(prevMonthDate);
-    
-    // Leitura do meta do mês anterior
-    const prevMetaSnapshot = await db.ref(`${FIREBASE_PATH}${prevKey}/meta`).once('value');
-    const prevMeta = prevMetaSnapshot.val() || null;
-    
-    // Define o saldo inicial do mês atual com o saldo final do mês anterior, ou 0
-    cardMonthlyData.startingCash = prevMeta?.closingCash || 0;
-  }
-
-  // Garante que closingCash existe, será atualizado em calculateSummary
-  if (cardMonthlyData.closingCash === undefined) cardMonthlyData.closingCash = 0;
 }
 
 function saveData() {
-  // Salva os dados do mês atual
-  getDataRef('entries')?.set(entries);
-  getDataRef('expenses')?.set(expenses);
-  getDataRef('fixedExpenses')?.set(fixedExpenses);
-  getDataRef('cards')?.set(cardMonthlyData);
+  const monthDocRef = getMonthDocRef();
+  const masterPlansDocRef = getMasterPlansDocRef();
+  if (!monthDocRef || !masterPlansDocRef) return;
   
-  // Salva planos mestres globalmente
-  getMasterRef('plans')?.set(masterPlans);
+  // 1. Dados do mês atual (Documento users/uid/months/monthKey)
+  const monthData = {
+    entries: entries,
+    expenses: expenses,
+    fixedExpenses: fixedExpenses,
+    cards: cardMonthlyData,
+    meta: { closingCash: cardMonthlyData.closingCash || 0 }
+  };
+  // setDoc com merge: true garante que o documento é criado/atualizado sem apagar campos que não enviamos.
+  setDoc(monthDocRef, monthData, { merge: true }).catch(err => console.error("Erro ao salvar dados do mês:", err));
 
-  // meta para carryover (fechamento do mês)
-  const meta = { closingCash: cardMonthlyData.closingCash || 0 };
-  getDataRef('meta')?.set(meta);
+  // 2. Planos mestres (Documento users/uid/masterData/plans)
+  const masterData = {
+    masterPlans: masterPlans
+  };
+  setDoc(masterPlansDocRef, masterData, { merge: true }).catch(err => console.error("Erro ao salvar planos mestres:", err));
 }
 
 // -------------------- Projeção de fixos/parcelados --------------------
 function projectExpensesForMonth() {
-  // se o usuário já adicionou fixos para o mês, não sobrescrever
   if (fixedExpenses.length > 0) return;
 
   const projectedExpenses = [];
@@ -175,14 +184,14 @@ function projectExpensesForMonth() {
     .filter(plan => plan.recurrence === 'Mensal')
     .forEach(plan => {
       projectedExpenses.push({
-        id: Date.now() + Math.random(),
+        id: generateUniqueId(), // Novo ID
         description: plan.description,
         category: plan.category,
         payment: plan.payment,
         value: plan.value,
         recurrence: 'Mensal',
         masterId: plan.id,
-        isProjected: true // Sinaliza que é uma projeção, não um item pago
+        isProjected: true
       });
     });
 
@@ -193,7 +202,7 @@ function projectExpensesForMonth() {
       if (plan.paidInstallments < plan.totalInstallments) {
         const nextInstallment = plan.paidInstallments + 1;
         projectedExpenses.push({
-          id: Date.now() + Math.random(),
+          id: generateUniqueId(), // Novo ID
           description: `${plan.description} (${nextInstallment}/${plan.totalInstallments})`,
           category: plan.category,
           payment: plan.payment,
@@ -220,7 +229,6 @@ function renderCardControls() {
 
   CARTAO_IDS.forEach(id => {
     const initialBalance = cardMonthlyData.initialBalances?.[id] || 0;
-    // O monthlyExpenses é calculado dentro de calculateSummary
     const totalExpenses = cardMonthlyData.monthlyExpenses?.[id] || 0; 
     const totalFatura = initialBalance + totalExpenses;
     totalFaturas += totalFatura;
@@ -254,7 +262,7 @@ function saveCardInitialBalances() {
 
 // -------------------- Cálculos & Resumo --------------------
 function calculateSummary() {
-  // Inicialização de totais
+  // Inicialização de totais... (o resto da função é puramente lógica JS e permanece igual)
   let totalEntradas = 0;
   let totalKm = 0;
   let totalHours = 0;
@@ -262,7 +270,6 @@ function calculateSummary() {
   let totalDespesasCartao = 0;
   let totalDespesasFixas = 0;
 
-  // reset card monthly expenses para recalculo
   cardMonthlyData.monthlyExpenses = {};
   CARTAO_IDS.forEach(id => cardMonthlyData.monthlyExpenses[id] = 0);
 
@@ -271,7 +278,6 @@ function calculateSummary() {
     totalEntradas += entry.value || 0;
     totalKm += entry.km || 0;
     totalHours += entry.hours || 0;
-    // Gastos de entradas em Dinheiro/PIX (Combustível, Outros Custos)
     totalDespesasDinheiroPix += (entry.gas || 0) + (entry.otherCosts || 0); 
   });
 
@@ -291,7 +297,7 @@ function calculateSummary() {
   // 3. Despesas fixas (inclui projeções)
   fixedExpenses.forEach(exp => {
     const value = exp.value || 0;
-    totalDespesasFixas += value; // Contabiliza no total de fixas
+    totalDespesasFixas += value; 
     if (DINHEIRO_PIX_IDS.includes(exp.payment)) {
       totalDespesasDinheiroPix += value;
     } else if (CARTAO_IDS.includes(exp.payment)) {
@@ -306,12 +312,9 @@ function calculateSummary() {
   const totalDespesasVariaveis = totalDespesasGeral - totalDespesasFixas;
   const lucroLiquido = totalEntradas - totalDespesasGeral;
 
-  // Carryover: startingCash (saldo carregado do mês anterior)
   const startingCash = cardMonthlyData.startingCash || 0;
-  // Saldo em Caixa = Saldo Inicial + Entradas em Dinheiro - Despesas em Dinheiro/PIX
   const saldoEmCaixa = startingCash + totalEntradas - totalDespesasDinheiroPix;
 
-  // salvar closingCash do mês atual para o próximo mês ler
   cardMonthlyData.closingCash = saldoEmCaixa;
 
   // Renderização no dashboard (index.html)
@@ -329,7 +332,6 @@ function calculateSummary() {
   if (elLucro) elLucro.textContent = formatBRL(lucroLiquido);
   if (elSaldo) {
     elSaldo.textContent = formatBRL(saldoEmCaixa);
-    // mostra nota do startingCash
     let note = document.querySelector('#saldo-caixa .small');
     if (!note) {
       const p = document.createElement('p');
@@ -347,11 +349,9 @@ function calculateSummary() {
   if (elVarExp) elVarExp.textContent = formatBRL(totalDespesasVariaveis);
   if (elFixExp) elFixExp.textContent = formatBRL(totalDespesasFixas);
 
-  // atualizar cartões e salvar
   renderCardControls();
   saveData();
 
-  // atualizar tabela resumo e gráficos
   renderSummaryTable();
   renderCharts();
 }
@@ -389,7 +389,7 @@ function handleFixedExpenseSubmit(e) {
   const recurrence = document.getElementById('fixed-expense-recurrence').value;
   const totalInstallments = parseInt(document.getElementById('fixed-expense-total-installments').value || '0');
   const value = parseFloat(document.getElementById('fixed-expense-value').value || '0');
-  const masterId = Date.now(); // ID único para o plano mestre
+  const masterId = generateUniqueId(); // ID único para o plano mestre
 
   const newFixedExpenseMaster = {
     id: masterId,
@@ -410,14 +410,14 @@ function handleFixedExpenseSubmit(e) {
   // Cria o item de log para o mês atual
   const logItem = {
     ...newFixedExpenseMaster,
-    id: Date.now() + Math.random(), // ID único para o log do mês
+    id: generateUniqueId(), // ID único para o log do mês
     masterId: masterId,
-    isProjected: false // É um item real adicionado, não uma projeção
+    isProjected: false 
   };
 
   if (recurrence === 'Parcelada') {
     logItem.description = `${logItem.description} (1/${totalInstallments})`;
-    logItem.installment = 1; // Registra qual parcela é
+    logItem.installment = 1; 
   }
 
   fixedExpenses.push(logItem);
@@ -436,7 +436,7 @@ function editFixedExpenseValue(id, currentValue) {
       const index = fixedExpenses.findIndex(e => e.id === id);
       if (index !== -1) {
         fixedExpenses[index].value = numValue;
-        fixedExpenses[index].isProjected = false; // Marca como confirmado/editado
+        fixedExpenses[index].isProjected = false; 
         saveData();
         renderLogs();
         calculateSummary();
@@ -452,7 +452,7 @@ function handleEntrySubmit(e) {
   const form = document.getElementById('entry-form');
   if (!form) return;
   const newEntry = {
-    id: Date.now(),
+    id: generateUniqueId(),
     date: document.getElementById('entry-date').value,
     platform: document.getElementById('entry-platform').value,
     value: parseFloat(document.getElementById('entry-value').value) || 0,
@@ -473,7 +473,7 @@ function handleExpenseSubmit(e) {
   const form = document.getElementById('expense-form');
   if (!form) return;
   const newExpense = {
-    id: Date.now(),
+    id: generateUniqueId(),
     date: document.getElementById('expense-date').value,
     category: document.getElementById('expense-category').value,
     description: document.getElementById('expense-description').value,
@@ -489,7 +489,6 @@ function handleExpenseSubmit(e) {
 
 // -------------------- Render logs / tabelas --------------------
 function renderLogs() {
-  // atualizar display do mês na aba fixos
   const monthDisplay = document.getElementById('current-month-display');
   const elMonthLog = document.getElementById('current-month-log-display');
   if (elMonthLog && monthDisplay) elMonthLog.textContent = monthDisplay.textContent;
@@ -503,7 +502,7 @@ function renderLogs() {
         <td>${entry.platform}</td>
         <td>${formatBRL(entry.value)}</td>
         <td>${entry.km}</td>
-        <td><button class="delete-btn" onclick="removeLogItem(${entry.id}, 'entry')">X</button></td>
+        <td><button class="delete-btn" onclick="removeLogItem('${entry.id}', 'entry')">X</button></td>
       </tr>
     `).join('');
   }
@@ -517,7 +516,7 @@ function renderLogs() {
         <td>${exp.category}</td>
         <td>${formatBRL(exp.value)}</td>
         <td>${exp.payment}</td>
-        <td><button class="delete-btn" onclick="removeLogItem(${exp.id}, 'expense')">X</button></td>
+        <td><button class="delete-btn" onclick="removeLogItem('${exp.id}', 'expense')">X</button></td>
       </tr>
     `).join('');
   }
@@ -526,17 +525,16 @@ function renderLogs() {
   const fixedBody = document.getElementById('fixed-expenses-log-body');
   if (fixedBody) {
     fixedBody.innerHTML = fixedExpenses.map(exp => {
-      // Adiciona um ícone se for projeção
       const isProjectedIcon = exp.isProjected ? ' <span style="color:var(--cor-destaque); font-size:12px;">(Proj.)</span>' : '';
       const displayDesc = exp.recurrence === 'Parcelada' ? `${exp.description}` : `${exp.description} (${exp.category})`;
       // Valor clicável para edição
-      const valueClickable = `<span onclick="editFixedExpenseValue(${exp.id}, ${exp.value})" style="cursor:pointer; text-decoration:underline;">${formatBRL(exp.value)}</span>${isProjectedIcon}`;
+      const valueClickable = `<span onclick="editFixedExpenseValue('${exp.id}', ${exp.value})" style="cursor:pointer; text-decoration:underline;">${formatBRL(exp.value)}</span>${isProjectedIcon}`;
       return `
         <tr>
           <td>${displayDesc}</td>
           <td>${valueClickable}</td>
           <td>${exp.payment}</td>
-          <td><button class="delete-btn" onclick="removeLogItem(${exp.id}, 'fixed')">X</button></td>
+          <td><button class="delete-btn" onclick="removeLogItem('${exp.id}', 'fixed')">X</button></td>
         </tr>
       `;
     }).join('');
@@ -552,31 +550,49 @@ function updateMonthDisplay() {
   currentMonthKey = formatMonthKey(currentMonthDate);
 }
 
-// CRÍTICO: Função de persistência de parcelas para o mês anterior
+// CRÍTICO: Função de persistência de parcelas para o mês anterior (Firestore)
 async function updateMasterPlansForPreviousMonth(prevMonthKey) {
-  const prevFixedRef = db.ref(`${FIREBASE_PATH}${prevMonthKey}/fixedExpenses`);
-  const prevFixedSnapshot = await prevFixedRef.once('value');
-  const prevMonthData = prevFixedSnapshot.val() || {};
-  
-  const masterPlansRef = getMasterRef('plans');
-  const masterPlansSnapshot = await masterPlansRef.once('value');
-  let masterPlansToUpdate = masterPlansSnapshot.val() || {};
+  const prevMonthDocRef = getMonthDocRef(prevMonthKey);
+  const masterPlansDocRef = getMasterPlansDocRef();
+  if (!prevMonthDocRef || !masterPlansDocRef || typeof db === 'undefined') return;
 
-  Object.values(prevMonthData).forEach(expense => {
-    // Apenas atualiza o plano mestre se for Parcelada E NÃO for projeção (foi confirmado/editado pelo usuário)
-    if (expense.recurrence === 'Parcelada' && !expense.isProjected && expense.masterId && expense.installment) {
-      const masterPlan = masterPlansToUpdate[expense.masterId];
-      // Atualiza apenas se a parcela paga registrada for maior que a anterior (evita retrocessos)
-      if (masterPlan && masterPlan.paidInstallments < expense.installment) {
-        masterPlan.paidInstallments = expense.installment;
+  // Cria um lote de escrita para operações atômicas
+  const batch = writeBatch(db);
+
+  try {
+    const prevMonthSnapshot = await getDoc(prevMonthDocRef);
+    const prevMonthData = prevMonthSnapshot.data() || {};
+    const prevFixedExpenses = prevMonthData.fixedExpenses || [];
+
+    const masterPlansSnapshot = await getDoc(masterPlansDocRef);
+    let masterPlansToUpdate = masterPlansSnapshot.data()?.masterPlans || {};
+    
+    let needsUpdate = false;
+
+    prevFixedExpenses.forEach(expense => {
+      // Condição de atualização: é parcela, não é projeção (foi paga/confirmada) e o número da parcela é válido.
+      if (expense.recurrence === 'Parcelada' && expense.isProjected === false && expense.masterId && expense.installment) {
+        const masterPlan = masterPlansToUpdate[expense.masterId];
+        // Atualiza apenas se a parcela paga registrada no master for menor que a parcela paga neste mês
+        if (masterPlan && masterPlan.paidInstallments < expense.installment) {
+          masterPlan.paidInstallments = expense.installment;
+          needsUpdate = true;
+        }
       }
-    }
-  });
+    });
+    
+    if (needsUpdate) {
+        // Salva a atualização no Firestore
+        batch.set(masterPlansDocRef, { masterPlans: masterPlansToUpdate }, { merge: true });
+        await batch.commit();
 
-  // Salva a atualização no Firebase (aguarda o término)
-  await masterPlansRef.set(masterPlansToUpdate); 
-  // Atualiza a variável global
-  masterPlans = masterPlansToUpdate;
+        // Atualiza a variável global
+        masterPlans = masterPlansToUpdate;
+    }
+
+  } catch (error) {
+    console.error("Erro ao atualizar planos mestres no Firestore:", error);
+  }
 }
 
 // CRÍTICO: Função de navegação agora é ASYNC
@@ -597,12 +613,13 @@ async function changeMonth(delta) {
   calculateSummary();
 }
 
-// -------------------- Resumo tabela --------------------
+// -------------------- Resumo tabela e Gráficos --------------------
+// (A lógica de resumo/gráficos não mudou, apenas usa os dados carregados)
 function renderSummaryTable() {
   const container = document.getElementById('monthly-summary-table');
   if (!container) return;
 
-  // Recalculo dos totais (baseado em calculateSummary)
+  // ... (cálculos omitidos, pois são a repetição da calculateSummary)
   let totalEntradas = 0;
   let totalDespesasDinheiroPix = 0;
   let totalDespesasCartao = 0;
@@ -642,7 +659,6 @@ function renderSummaryTable() {
   `;
 }
 
-// -------------------- Gráficos (Chart.js) --------------------
 function renderCharts() {
   const donutCtx = document.getElementById('chart-donut')?.getContext?.('2d');
   const barCtx = document.getElementById('chart-bar')?.getContext?.('2d');
@@ -706,11 +722,11 @@ function exportMonthCSV() {
 }
 
 function exportMonthPDF() {
-  if (typeof jsPDF === 'undefined') {
+  if (typeof window.jspdf?.jsPDF === 'undefined') {
     alert('A biblioteca jsPDF não está carregada. Você pode exportar em CSV (Excel) em vez disso.');
     return;
   }
-  const { jsPDF: JsPDF } = window.jspdf || window;
+  const { jsPDF: JsPDF } = window.jspdf;
   const doc = new JsPDF();
   doc.setFontSize(12);
   doc.text(`Resumo Financeiro - ${currentMonthKey}`, 10, 14);
@@ -737,12 +753,20 @@ function populateSelect(elementId, options) {
   });
 }
 
-// CRÍTICO: initApp agora é async para esperar o loadData do Firebase
+// CRÍTICO: initApp agora é async para esperar o loadData do Firestore
 async function initApp() {
+  // O código precisa esperar até que window.currentUserId seja definido (após a autenticação em index.html)
+  if (!window.currentUserId) {
+    // Adiciona um listener para tentar novamente quando o ID do usuário estiver disponível.
+    // Isso é uma medida de segurança, o ideal é que onAuthStateChanged em index.html seja rápido.
+    setTimeout(initApp, 100); 
+    return;
+  }
+  
   // exibir mês atual
   updateMonthDisplay();
 
-  // carrega dados do mês (AGORA ESPERA PELO FIREBASE)
+  // carrega dados do mês (AGORA ESPERA PELO FIRESTORE)
   await loadData();
 
   // projeta fixos/parcelas
@@ -774,25 +798,12 @@ async function initApp() {
   const exportPdfBtn = document.getElementById('export-pdf-btn'); if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportMonthPDF);
 
   // expor funções para onclick inline (CRÍTICO para botões em HTML)
-  window.openTab = openTab;
   window.changeMonth = changeMonth;
   window.saveCardInitialBalances = saveCardInitialBalances;
   window.removeLogItem = removeLogItem;
   window.editFixedExpenseValue = editFixedExpenseValue;
   window.toggleRecurrenceForm = toggleRecurrenceForm;
-  window.exportMonthCSV = exportMonthCSV;
-  window.exportMonthPDF = exportMonthPDF;
-  window.calculateSummary = calculateSummary;
 }
 
 // executar init quando DOM pronto
 document.addEventListener('DOMContentLoaded', initApp);
-
-// -------------------- Função de apoio para abas --------------------
-function openTab(tabId, button) {
-  document.querySelectorAll('.tab-content')?.forEach(tab => tab.style.display = 'none');
-  document.querySelectorAll('.tab-button')?.forEach(btn => btn.classList.remove('active'));
-  const target = document.getElementById(tabId);
-  if (target) target.style.display = 'block';
-  if (button) button.classList.add('active');
-}
