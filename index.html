@@ -9,10 +9,11 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+        // Importa o SDK modular do Firestore (versão 11.6.1, conforme seu script.js)
+        import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    <script>
         // Configuração de fallback/obrigatória (usando o config original do usuário)
         const FALLBACK_CONFIG = {
             apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
@@ -37,12 +38,16 @@
         }
 
         try {
-            // Inicializa o Firebase e expõe 'db' globalmente para o script.js
-            const app = firebase.initializeApp(finalConfig);
-            window.db = app.database(); // 'db' exposto como global (window.db)
-            console.log("Firebase Realtime Database inicializado.");
+            // Inicializa o App
+            const app = initializeApp(finalConfig);
+            // Inicializa o Firestore e expõe 'db' globalmente
+            window.db = getFirestore(app);
+            window.__app_id = finalConfig.appId;
+            // Define um ID de usuário mockado, pois o app não tem Auth
+            window.currentUserId = 'demo-user-123'; 
+            console.log("Firebase Firestore inicializado.");
         } catch (error) {
-            console.error("Erro ao inicializar o Firebase. Verifique a configuração.", error);
+            console.error("Erro ao inicializar o Firebase Firestore. Verifique a configuração.", error);
         }
     </script>
 </head>

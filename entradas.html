@@ -5,9 +5,10 @@
   <title>Entradas — Controle Financeiro</title>
   <link rel="stylesheet" href="style.css">
   
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
-  <script>
+  <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+      import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+      
       const FALLBACK_CONFIG = {
           apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
           authDomain: "controle-financeiro-b7880.firebaseapp.com",
@@ -29,8 +30,10 @@
       }
 
       try {
-          const app = firebase.initializeApp(finalConfig);
-          window.db = app.database();
+          const app = initializeApp(finalConfig);
+          window.db = getFirestore(app);
+          window.__app_id = finalConfig.appId;
+          window.currentUserId = 'demo-user-123'; 
       } catch (error) {
           console.error("Erro ao inicializar o Firebase.", error);
       }
