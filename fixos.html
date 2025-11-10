@@ -5,44 +5,21 @@
   <title>Fixos / Dívidas — Controle Financeiro</title>
   <link rel="stylesheet" href="style.css">
   
-  <script type="module">
-      import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-      // CORREÇÃO: Usando o caminho 'firestore/index.js' para garantir que o serviço esteja disponível
-      import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firestore/index.js";
-      import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-      
-      const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { projectId: 'default-project-id' };
-      window.__app_id = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-      const app = initializeApp(firebaseConfig);
-      window.db = getFirestore(app);
-      window.auth = getAuth(app);
-      
-      async function authenticateUser() {
-          try {
-              if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                  await signInWithCustomToken(window.auth, __initial_auth_token);
-              } else {
-                  await signInAnonymously(window.auth);
-              }
-              window.userId = window.auth.currentUser.uid;
-              if (window.initApp) window.initApp();
-          } catch (error) {
-              console.error("Erro ao autenticar no Firebase. Usando ID anônimo fallback.", error);
-              window.userId = 'anon-user-fallback-' + crypto.randomUUID(); 
-              if (window.initApp) window.initApp();
-          }
-      }
-
-      onAuthStateChanged(window.auth, (user) => {
-          if (user) {
-              window.userId = user.uid;
-              if (window.initApp) window.initApp();
-          } else if (!window.userId) {
-              authenticateUser();
-          }
-      });
-      authenticateUser();
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
+      authDomain: "controle-financeiro-b7880.firebaseapp.com",
+      databaseURL: "https://controle-financeiro-b7880-default-rtdb.firebaseio.com",
+      projectId: "controle-financeiro-b7880",
+      storageBucket: "controle-financeiro-b7880.firebasestorage.app",
+      messagingSenderId: "149823899793",
+      appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
+    };
+    // Inicializa o Firebase e obtém a referência do DB, tornando 'db' global
+    const app = firebase.initializeApp(firebaseConfig);
+    window.db = app.database();
   </script>
 </head>
 <body>
@@ -78,7 +55,7 @@
         </div>
         <div class="form-group">
           <label for="fixed-expense-recurrence">Tipo de Recorrência</label>
-          <select id="fixed-expense-recurrence" required>
+          <select id="fixed-expense-recurrence" onchange="toggleRecurrenceForm(this.value)" required>
             <option value="Unica">Única (Apenas este mês)</option>
             <option value="Mensal">Mensal (Todo mês)</option>
             <option value="Parcelada">Parcelada (Dívida)</option>

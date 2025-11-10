@@ -9,58 +9,22 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        // CORREÇÃO: Usando o caminho 'firestore/index.js' para garantir que o serviço esteja disponível
-        import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firestore/index.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        
-        // Configurações e Variáveis Globais
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { projectId: 'default-project-id' };
-        window.__app_id = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script>
+      const firebaseConfig = {
+        apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
+        authDomain: "controle-financeiro-b7880.firebaseapp.com",
+        databaseURL: "https://controle-financeiro-b7880-default-rtdb.firebaseio.com",
+        projectId: "controle-financeiro-b7880",
+        storageBucket: "controle-financeiro-b7880.firebasestorage.app",
+        messagingSenderId: "149823899793",
+        appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
+      };
 
-        // 1. Inicializa o App
-        const app = initializeApp(firebaseConfig);
-        window.db = getFirestore(app);
-        window.auth = getAuth(app);
-        
-        // 2. Função de Autenticação
-        async function authenticateUser() {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(window.auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(window.auth);
-                }
-                // 3. Define o userId após o sucesso do login
-                window.userId = window.auth.currentUser.uid;
-                console.log("Firebase Auth e Firestore inicializados. User ID:", window.userId);
-                
-                // 4. Inicia a lógica principal do app
-                if (window.initApp) {
-                    window.initApp();
-                }
-            } catch (error) {
-                console.error("Erro ao autenticar no Firebase. Usando ID anônimo fallback.", error);
-                window.userId = 'anon-user-fallback-' + crypto.randomUUID(); 
-                if (window.initApp) {
-                    window.initApp();
-                }
-            }
-        }
-
-        // 5. Ouve o estado de autenticação para iniciar o app
-        onAuthStateChanged(window.auth, (user) => {
-            if (user) {
-                window.userId = user.uid;
-                if (window.initApp) window.initApp();
-            } else if (!window.userId) {
-                authenticateUser();
-            }
-        });
-
-        // Tenta autenticar no load inicial
-        authenticateUser();
+      // Inicializa o Firebase e obtém a referência do DB, tornando 'db' global
+      const app = firebase.initializeApp(firebaseConfig);
+      window.db = app.database(); // Usa window.db para garantir acesso global
     </script>
 </head>
 <body>
@@ -75,9 +39,9 @@
 
         <div id="dashboard-tab" class="tab-content" style="display:block">
             <div class="month-selector">
-                <button id="prev-month-btn">&#9664;</button>
+                <button onclick="changeMonth(-1)">&#9664;</button>
                 <h2 id="current-month-display"></h2>
-                <button id="next-month-btn">&#9654;</button>
+                <button onclick="changeMonth(1)">&#9654;</button>
             </div>
 
             <div class="dashboard-grid">
