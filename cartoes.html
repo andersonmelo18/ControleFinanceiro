@@ -24,9 +24,10 @@
     // Inicializa o Firebase (App, Auth e DB)
     const app = firebase.initializeApp(firebaseConfig);
     const db = app.database();
+    const auth = app.auth(); // CORREÇÃO: Inicializa o serviço de Auth
     window.db = db; // Torna o objeto DB acessível ao script.js
   </script>
-  </head>
+</head>
 <body>
   <div class="container">
     <div class="nav-tabs">
@@ -40,16 +41,22 @@
     <div id="cards-tab" class="tab-content" style="display:block; margin-top:12px;">
       <div class="card-control-section">
         <h3>💳 Controle de Cartões (Fatura Mês)</h3>
-        <p style="font-size:12px; color:var(--cor-destaque);">* O Saldo Inicial é o valor da fatura do mês anterior. É automático, mas você pode editar se necessário.</p>
+        <p style="font-size:12px; color:var(--cor-destaque);">* O Saldo Inicial é o valor da fatura a ser paga neste mês (que é a fatura fechada do mês passado).</p>
+        
+        <div id="card-balances">
+          <!-- Campos de saldo inicial dos cartões serão inseridos aqui pelo JS -->
+        </div>
 
-        <div id="card-list"></div>
-
-                <button id="save-card-balances-btn" class="submit-btn" onclick="saveCardInitialBalances()">Salvar Saldo Inicial</button>
+        <div style="margin-top:12px; display:flex; gap:10px;">
+          <button class="submit-btn" onclick="saveCardInitialBalances()">Salvar Saldos Iniciais</button>
+        </div>
       </div>
 
-      <div class="card-control-section" style="margin-top:30px;">
-        <h3>💰 Total Faturas no Mês</h3>
-        <div class="card-item"><span>Total a Pagar (Cartões)</span><span id="total-faturas-display" class="card-fatura-total">R$ 0,00</span></div>
+      <div class="card-control-section" style="margin-top: 20px;">
+        <h3>Resumo de Faturas</h3>
+        <div id="card-summary">
+          <!-- Resumo de faturas será inserido aqui pelo JS -->
+        </div>
       </div>
     </div>
   </div>

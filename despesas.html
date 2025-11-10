@@ -24,15 +24,16 @@
     // Inicializa o Firebase (App, Auth e DB)
     const app = firebase.initializeApp(firebaseConfig);
     const db = app.database();
+    const auth = app.auth(); // CORREÇÃO: Inicializa o serviço de Auth
     window.db = db; // Torna o objeto DB acessível ao script.js
   </script>
-  </head>
+</head>
 <body>
   <div class="container">
     <div class="nav-tabs">
       <a href="index.html"><button class="tab-button">🏠 Painel</button></a>
       <a href="entradas.html"><button class="tab-button">➡️ Entradas</button></a>
-      <a href="despesas.html"><button class="tab-button active">⬅️ Despesas Variáveis</button></a>
+      <a href="despesas.html"><button class="tab-button active">⬅️ Despesas</button></a>
       <a href="fixos.html"><button class="tab-button">📌 Fixos/Dívidas</button></a>
       <a href="cartoes.html"><button class="tab-button">💳 Cartões</button></a>
     </div>
@@ -53,7 +54,7 @@
           <input type="text" id="expense-description" required>
         </div>
         <div class="form-group">
-          <label for="expense-payment">Forma de Pagamento</label>
+          <label for="expense-payment">Meio de Pagamento</label>
           <select id="expense-payment" required></select>
         </div>
         <div class="form-group">
@@ -64,12 +65,21 @@
       </form>
 
       <div class="log-table-container">
-        <h3>Histórico de Despesas Variáveis</h3>
-        <table class="log-table">
+        <h3>Histórico de Despesas (Este Mês)</h3>
+        <table id="expense-log" class="log-table">
           <thead>
-            <tr><th>Data</th><th>Categoria</th><th>Valor</th><th>Forma</th><th></th></tr>
+            <tr>
+              <th>Data</th>
+              <th>Categoria</th>
+              <th>Descrição</th>
+              <th>Pagamento</th>
+              <th>Valor (R$)</th>
+              <th>Ação</th>
+            </tr>
           </thead>
-          <tbody id="expenses-log-body"></tbody>
+          <tbody>
+            <!-- Logs serão inseridos aqui pelo JS -->
+          </tbody>
         </table>
       </div>
     </div>

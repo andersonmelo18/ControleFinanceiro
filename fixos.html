@@ -24,9 +24,10 @@
     // Inicializa o Firebase (App, Auth e DB)
     const app = firebase.initializeApp(firebaseConfig);
     const db = app.database();
+    const auth = app.auth(); // CORREÇÃO: Inicializa o serviço de Auth
     window.db = db; // Torna o objeto DB acessível ao script.js
   </script>
-  </head>
+</head>
 <body>
   <div class="container">
     <div class="nav-tabs">
@@ -37,25 +38,15 @@
       <a href="cartoes.html"><button class="tab-button">💳 Cartões</button></a>
     </div>
 
-    <div id="fixed-expenses-tab" class="tab-content" style="display:block; margin-top:12px;">
-      <h2>📌 Despesas Fixas e Dívidas</h2>
-      <p>Registre aqui o que é recorrente ou parcelado. O sistema projeta automaticamente nos meses seguintes.</p>
-
+    <div id="fixed-tab" class="tab-content" style="display:block; margin-top:12px;">
+      <h2>📌 Registro de Despesas Fixas e Dívidas</h2>
       <form id="fixed-expense-form">
         <div class="form-group">
-          <label for="fixed-expense-payment">Forma de Pagamento</label>
-          <select id="fixed-expense-payment" required></select>
-        </div>
-        <div class="form-group">
-          <label for="fixed-expense-category">Categoria</label>
-          <select id="fixed-expense-category" required></select>
-        </div>
-        <div class="form-group">
-          <label for="fixed-expense-description">Descrição</label>
+          <label for="fixed-expense-description">Descrição/Nome da Dívida</label>
           <input type="text" id="fixed-expense-description" required>
         </div>
         <div class="form-group">
-          <label for="fixed-expense-value">Valor (R$)</label>
+          <label for="fixed-expense-value">Valor Mensal (R$)</label>
           <input type="number" id="fixed-expense-value" step="0.01" required>
         </div>
         <div class="form-group">
@@ -74,17 +65,24 @@
           </div>
         </div>
 
-        <button type="submit" class="submit-btn">Adicionar Despesa Fixa/Dívida</button>
+        <button type="submit" class="submit-btn">Adicionar Fixo/Dívida</button>
       </form>
 
       <div class="log-table-container">
-        <h3>Resumo de Despesas Fixas do Mês (<span id="current-month-log-display"></span>)</h3>
-        <p style="font-size:12px; color:var(--cor-destaque)">*</p>
-        <table class="log-table">
+        <h3>Despesas Fixas e Dívidas Registradas</h3>
+        <table id="fixed-expense-log" class="log-table">
           <thead>
-            <tr><th>Descrição/Parcela</th><th>Valor</th><th>Forma</th><th>Ação</th></tr>
+            <tr>
+              <th>Descrição</th>
+              <th>Valor Mensal (R$)</th>
+              <th>Tipo</th>
+              <th>Parcelas</th>
+              <th>Ação</th>
+            </tr>
           </thead>
-          <tbody id="fixed-expenses-log-body"></tbody>
+          <tbody>
+            <!-- Logs serão inseridos aqui pelo JS -->
+          </tbody>
         </table>
       </div>
     </div>

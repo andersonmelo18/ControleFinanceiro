@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Entradas — Controle Financeiro</title>
+  <title>Despesas — Controle Financeiro</title>
   <link rel="stylesheet" href="style.css">
   
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
@@ -24,60 +24,62 @@
     // Inicializa o Firebase (App, Auth e DB)
     const app = firebase.initializeApp(firebaseConfig);
     const db = app.database();
+    const auth = app.auth(); // CORREÇÃO: Inicializa o serviço de Auth
     window.db = db; // Torna o objeto DB acessível ao script.js
   </script>
-  </head>
+</head>
 <body>
   <div class="container">
     <div class="nav-tabs">
       <a href="index.html"><button class="tab-button">🏠 Painel</button></a>
-      <a href="entradas.html"><button class="tab-button active">➡️ Entradas</button></a>
-      <a href="despesas.html"><button class="tab-button">⬅️ Despesas</button></a>
+      <a href="entradas.html"><button class="tab-button">➡️ Entradas</button></a>
+      <a href="despesas.html"><button class="tab-button active">⬅️ Despesas</button></a>
       <a href="fixos.html"><button class="tab-button">📌 Fixos/Dívidas</button></a>
       <a href="cartoes.html"><button class="tab-button">💳 Cartões</button></a>
     </div>
 
-    <div id="entries-tab" class="tab-content" style="display:block; margin-top:12px;">
-      <h2>➡️ Registro de Entradas Diárias</h2>
-      <form id="entry-form">
+    <div id="expenses-tab" class="tab-content" style="display:block; margin-top:12px;">
+      <h2>⬅️ Registro de Despesas Variáveis</h2>
+      <form id="expense-form">
         <div class="form-group">
-          <label for="entry-date">Data</label>
-          <input type="date" id="entry-date" required>
+          <label for="expense-date">Data</label>
+          <input type="date" id="expense-date" required>
         </div>
         <div class="form-group">
-          <label for="entry-platform">Plataforma Principal</label>
-          <select id="entry-platform" required></select>
+          <label for="expense-category">Categoria</label>
+          <select id="expense-category" required></select>
         </div>
         <div class="form-group">
-          <label for="entry-value">Total de Entradas (R$)</label>
-          <input type="number" id="entry-value" step="0.01" required>
+          <label for="expense-description">Descrição</label>
+          <input type="text" id="expense-description" required>
         </div>
         <div class="form-group">
-          <label for="entry-km">Km Total Rodado</label>
-          <input type="number" id="entry-km" step="0.1" required>
+          <label for="expense-payment">Meio de Pagamento</label>
+          <select id="expense-payment" required></select>
         </div>
         <div class="form-group">
-          <label for="entry-hours">Total Horas Trabalhadas</label>
-          <input type="number" id="entry-hours" step="0.5" required>
+          <label for="expense-value">Valor (R$)</label>
+          <input type="number" id="expense-value" step="0.01" required>
         </div>
-        <div class="form-group">
-          <label for="entry-gas">Gasto Gasolina (R$)</label>
-          <input type="number" id="entry-gas" step="0.01" value="0.00" required>
-        </div>
-        <div class="form-group">
-          <label for="entry-other-costs">Outros Gastos em Dinheiro/PIX (R$)</label>
-          <input type="number" id="entry-other-costs" step="0.01" value="0.00" required>
-        </div>
-        <button type="submit" class="submit-btn">Adicionar Entrada</button>
+        <button type="submit" class="submit-btn">Adicionar Despesa</button>
       </form>
 
       <div class="log-table-container">
-        <h3>Histórico de Entradas</h3>
-        <table class="log-table">
+        <h3>Histórico de Despesas (Este Mês)</h3>
+        <table id="expense-log" class="log-table">
           <thead>
-            <tr><th>Data</th><th>Plataforma</th><th>Entrada</th><th>KM</th><th></th></tr>
+            <tr>
+              <th>Data</th>
+              <th>Categoria</th>
+              <th>Descrição</th>
+              <th>Pagamento</th>
+              <th>Valor (R$)</th>
+              <th>Ação</th>
+            </tr>
           </thead>
-          <tbody id="entries-log-body"></tbody>
+          <tbody>
+            <!-- Logs serão inseridos aqui pelo JS -->
+          </tbody>
         </table>
       </div>
     </div>
