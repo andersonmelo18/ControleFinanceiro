@@ -4,6 +4,41 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Entradas — Controle Financeiro</title>
   <link rel="stylesheet" href="style.css">
+  
+  <!-- NOVO CABEÇALHO FIREBASE/AUTH -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+    if (Object.keys(firebaseConfig).length > 0) {
+        const app = initializeApp(firebaseConfig);
+        window.db = getFirestore(app);
+        window.auth = getAuth(app);
+        setLogLevel('debug'); 
+
+        async function authenticate() {
+            try {
+                let userCredential;
+                if (initialAuthToken) {
+                    userCredential = await signInWithCustomToken(window.auth, initialAuthToken);
+                } else {
+                    userCredential = await signInAnonymously(window.auth);
+                }
+                window.currentUserId = userCredential.user.uid; 
+            } catch (error) {
+                console.error("Erro na autenticação do Firebase:", error);
+                window.currentUserId = 'anonymous_error';
+            }
+        }
+        authenticate(); 
+    }
+  </script>
+  <script type="module" src="script.js"></script>
 </head>
 <body>
   <div class="container">
@@ -53,7 +88,7 @@
         <h3>Histórico de Entradas</h3>
         <table class="log-table">
           <thead>
-            <tr><th>Data</th><th>Plataforma</th><th>Entrada</th><th>KM</th><th></th></tr>
+            <tr><th>Data</th><th>Plataforma</th><th>Valor</th><th>Km</th><th></th></tr>
           </thead>
           <tbody id="entries-log-body"></tbody>
         </table>
@@ -61,6 +96,5 @@
     </div>
   </div>
 
-  <script src="script.js"></script>
 </body>
 </html>
