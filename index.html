@@ -1,95 +1,110 @@
 <!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Entradas — Controle Financeiro</title>
-  <link rel="stylesheet" href="style.css">
-  
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>     
-  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Painel — Controle Financeiro Autônomo</title>
 
-  <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
-      authDomain: "controle-financeiro-b7880.firebaseapp.com",
-      databaseURL: "https://controle-financeiro-b7880-default-rtdb.firebaseio.com",
-      projectId: "controle-financeiro-b7880",
-      storageBucket: "controle-financeiro-b7880.firebasestorage.app",
-      messagingSenderId: "149823899793",
-      appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
-    };
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    // Inicializa o Firebase (App, Auth e DB)
-    const app = firebase.initializeApp(firebaseConfig);
-    const db = app.database();
-    const auth = app.auth(); // CORREÇÃO: Inicializa o serviço de Auth
-    window.db = db; // Torna o objeto DB acessível ao script.js
-  </script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+
+    <script>
+      const firebaseConfig = {
+        apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
+        authDomain: "controle-financeiro-b7880.firebaseapp.com",
+        databaseURL: "https://controle-financeiro-b7880-default-rtdb.firebaseio.com",
+        projectId: "controle-financeiro-b7880",
+        storageBucket: "controle-financeiro-b7880.firebasestorage.app",
+        messagingSenderId: "149823899793",
+        appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
+        // measurementId não é necessário aqui
+      };
+
+      // Inicializa o Firebase e obtém a referência do DB
+      const app = firebase.initializeApp(firebaseConfig);
+      const db = app.database();
+    </script>
 </head>
 <body>
-  <div class="container">
-    <div class="nav-tabs">
-      <a href="index.html"><button class="tab-button">🏠 Painel</button></a>
-      <a href="entradas.html"><button class="tab-button active">➡️ Entradas</button></a>
-      <a href="despesas.html"><button class="tab-button">⬅️ Despesas</button></a>
-      <a href="fixos.html"><button class="tab-button">📌 Fixos/Dívidas</button></a>
-      <a href="cartoes.html"><button class="tab-button">💳 Cartões</button></a>
-    </div>
+    <div class="container">
+        <div class="nav-tabs">
+            <a href="index.html"><button class="tab-button active">🏠 Painel</button></a>
+            <a href="entradas.html"><button class="tab-button">➡️ Entradas</button></a>
+            <a href="despesas.html"><button class="tab-button">⬅️ Despesas</button></a>
+            <a href="fixos.html"><button class="tab-button">📌 Fixos/Dívidas</button></a>
+            <a href="cartoes.html"><button class="tab-button">💳 Cartões</button></a>
+        </div>
 
-    <div id="entries-tab" class="tab-content" style="display:block; margin-top:12px;">
-      <h2>➡️ Registro de Entradas (Vendas/Serviços)</h2>
-      <form id="entry-form">
-        <div class="form-group">
-          <label for="entry-date">Data</label>
-          <input type="date" id="entry-date" required>
-        </div>
-        <div class="form-group">
-          <label for="entry-platform">Plataforma/Local</label>
-          <select id="entry-platform" required></select>
-        </div>
-        <div class="form-group">
-          <label for="entry-value">Total de Entradas (R$)</label>
-          <input type="number" id="entry-value" step="0.01" required>
-        </div>
-        <div class="form-group">
-          <label for="entry-km">Km Total Rodado</label>
-          <input type="number" id="entry-km" step="0.1" required>
-        </div>
-        <div class="form-group">
-          <label for="entry-hours">Total Horas Trabalhadas</label>
-          <input type="number" id="entry-hours" step="0.5" required>
-        </div>
-        <div class="form-group">
-          <label for="entry-gas">Gasto com Combustível (R$)</label>
-          <input type="number" id="entry-gas" step="0.01" value="0.00" required>
-        </div>
-        <button type="submit" class="submit-btn">Adicionar Entrada</button>
-      </form>
+        <div id="dashboard-tab" class="tab-content" style="display:block">
+            <div class="month-selector">
+                <button onclick="changeMonth(-1)">&#9664;</button>
+                <h2 id="current-month-display"></h2>
+                <button onclick="changeMonth(1)">&#9654;</button>
+            </div>
 
-      <div class="log-table-container">
-        <h3>Histórico de Entradas (Este Mês)</h3>
-        <table id="entry-log" class="log-table">
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Plataforma</th>
-              <th>Valor (R$)</th>
-              <th>Km</th>
-              <th>Horas</th>
-              <th>Comb. (R$)</th>
-              <th>Ação</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Logs serão inseridos aqui pelo JS -->
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+            <div class="dashboard-grid">
+                <div id="total-entradas" class="card">
+                    <h4>⬆️ Total Entradas</h4>
+                    <div class="value">R$ 0,00</div>
+                </div>
+                <div id="total-despesas" class="card">
+                    <h4>⬇️ Total Despesas</h4>
+                    <div class="value">R$ 0,00</div>
+                </div>
+                <div id="lucro-liquido" class="card full-width">
+                    <h4>🎯 Lucro Líquido</h4>
+                    <div class="value">R$ 0,00</div>
+                </div>
+                <div id="saldo-caixa" class="card full-width">
+                    <h4>🗃️ Saldo em Caixa (Dinheiro/PIX)</h4>
+                    <div class="value">R$ 0,00</div>
+                    <p class="small" style="margin:5px 0 0"></p>
+                </div>
+                <div class="card">
+                    <h4>Km Total</h4>
+                    <div id="total-km" class="value">0 km</div>
+                </div>
+                <div class="card">
+                    <h4>Horas Total</h4>
+                    <div id="total-hours" class="value">0 h</div>
+                </div>
+            </div>
 
-  <script src="script.js"></script>
+            <div class="card-control-section">
+                <h3>📌 Detalhamento de Despesas (Geral)</h3>
+                <div class="card-item"><span>Despesas Variáveis</span><span id="var-exp-value" style="font-weight:bold;color:var(--cor-erro)">R$ 0,00</span></div>
+                <div class="card-item"><span>Despesas Fixas e Dívidas</span><span id="fix-exp-value" style="font-weight:bold;color:var(--cor-erro)">R$ 0,00</span></div>
+            </div>
+
+            <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
+                <button id="export-csv-btn" class="submit-btn">Exportar CSV (Excel)</button>
+                <button id="export-pdf-btn" class="submit-btn">Exportar PDF</button>
+            </div>
+
+            <div style="display:flex; gap:12px; margin-top:12px; flex-direction:column;">
+                <div class="card" style="min-height:260px;">
+                    <h4>Gráfico — Receitas vs Despesas</h4>
+                    <div style="height:200px;"><canvas id="chart-donut"></canvas></div>
+                </div>
+
+                <div class="card" style="min-height:260px;">
+                    <h4>Gastos por Categoria</h4>
+                    <div style="height:220px"><canvas id="chart-bar"></canvas></div>
+                </div>
+
+                <div class="card">
+                    <h4>Resumo Mensal</h4>
+                    <div id="monthly-summary-table"></div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="script.js"></script>
 </body>
 </html>
