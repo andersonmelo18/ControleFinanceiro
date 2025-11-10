@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cartões — Controle Financeiro</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <div class="nav-tabs">
+      <a href="index.html"><button class="tab-button">🏠 Painel</button></a>
+      <a href="entradas.html"><button class="tab-button">➡️ Entradas</button></a>
+      <a href="despesas.html"><button class="tab-button">⬅️ Despesas</button></a>
+      <a href="fixos.html"><button class="tab-button">📌 Fixos/Dívidas</button></a>
+      <a href="cartoes.html"><button class="tab-button active">💳 Cartões</button></a>
+    </div>
+
+    <div id="cards-tab" class="tab-content" style="display:block; margin-top:12px;">
+      <div class="card-control-section">
+        <h3>💳 Controle de Cartões (Fatura Mês)</h3>
+        <p style="font-size:12px; color:var(--cor-destaque);">* O Saldo Inicial é o valor da fatura do mês anterior. É automático, mas você pode editar se necessário.</p>
+
+        <div id="card-list"></div>
+
+        <button class="submit-btn" onclick="saveCardInitialBalances()">Salvar Saldo Inicial</button>
+      </div>
+
+      <div class="card-control-section" style="margin-top:30px;">
+        <h3>💰 Total Faturas no Mês</h3>
+        <div class="card-item"><span>Total a Pagar (Cartões)</span><span id="total-faturas-display" class="card-fatura-total">R$ 0,00</span></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

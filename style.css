@@ -1,0 +1,108 @@
+/* style.css (tema: preto + azul + laranja) */
+:root{
+  --cor-fundo: #121212;
+  --cor-card: #1E1E1E;
+  --cor-primaria: #2196F3;
+  --cor-destaque: #FF9800;
+  --cor-texto: #E0E0E0;
+  --cor-sucesso: #4CAF50;
+  --cor-erro: #F44336;
+  --gap: 10px;
+}
+
+*{box-sizing:border-box}
+body{
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color:var(--cor-fundo);
+  color:var(--cor-texto);
+  margin:0;
+  padding:0;
+  line-height:1.45;
+}
+.container{
+  padding:12px;
+  max-width:900px;
+  margin:0 auto;
+}
+
+/* Nav */
+.nav-tabs{
+  display:flex;
+  gap:4px;
+  background-color:var(--cor-card);
+  border-bottom:2px solid var(--cor-primaria);
+  position:sticky;
+  top:0;
+  z-index:100;
+  padding:4px;
+  border-radius:8px;
+}
+.tab-button{
+  flex:1;
+  padding:12px 6px;
+  cursor:pointer;
+  text-align:center;
+  border:none;
+  background:transparent;
+  color:var(--cor-texto);
+  font-size:13px;
+  border-radius:6px;
+}
+.tab-button.active{
+  background:var(--cor-primaria);
+  color:#fff;
+}
+
+/* tabs content */
+.tab-content{ display:none; padding-top:18px;}
+.tab-content .card{ background:var(--cor-card); padding:14px; border-radius:10px; box-shadow:0 6px 18px rgba(0,0,0,0.35); }
+.tab-content .full-width{ width:100%; }
+
+/* form */
+.form-group{ margin-bottom:12px; display:flex; flex-direction:column; gap:6px; }
+label{ color:var(--cor-primaria); font-weight:700; font-size:13px; }
+input[type="date"], input[type="number"], input[type="text"], select{
+  padding:10px; border-radius:8px; border:1px solid var(--cor-primaria);
+  background:var(--cor-card); color:var(--cor-texto);
+}
+button.submit-btn{
+  background:var(--cor-primaria); color:#fff; padding:12px; border-radius:8px; border:none; cursor:pointer; font-size:15px;
+}
+button.submit-btn:hover{ filter:brightness(.95) }
+
+/* DASHBOARD */
+.month-selector{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:14px; padding:10px; border-radius:8px; border:1px solid var(--cor-primaria); background:var(--cor-card); }
+.month-selector button{ background:none; border:none; color:var(--cor-destaque); font-size:20px; cursor:pointer; }
+.month-selector h2{ margin:0; font-size:16px; color:var(--cor-texto); }
+
+.dashboard-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:10px; }
+.card h4{ margin:0 0 6px 0; color:var(--cor-primaria); font-size:13px }
+.card .value{ font-size:22px; font-weight:700; color:var(--cor-texto) }
+
+#total-entradas .value{ color:var(--cor-sucesso) }
+#total-despesas .value{ color:var(--cor-erro) }
+#lucro-liquido .value{ background:var(--cor-destaque); color:black; padding:6px; border-radius:6px; display:inline-block; }
+#saldo-caixa .value{ color:var(--cor-primaria) }
+
+/* card-control */
+.card-control-section{ margin-top:16px; padding:12px; border-radius:8px; background:var(--cor-card) }
+
+/* table / logs */
+.log-table-container{ margin-top:14px; overflow-x:auto; }
+.log-table{ width:100%; border-collapse:collapse; font-size:14px; }
+.log-table th, .log-table td{ padding:8px; text-align:left; border-bottom:1px solid #333; }
+.log-table th{ background:var(--cor-primaria); color:white; position:sticky; top:0; }
+
+/* cards list */
+.card-item{ display:flex; gap:10px; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid #333; }
+.card-initial-input{ width:110px; text-align:right; padding:6px; border-radius:6px; background:#2A2A2A; color:var(--cor-texto); border:1px solid #444; }
+
+/* small */
+.small{ font-size:12px; color:var(--cor-destaque) }
+.delete-btn{ background:var(--cor-erro); color:#fff; border:none; padding:4px 7px; border-radius:6px; cursor:pointer; }
+
+/* responsive */
+@media (max-width:600px){
+  .dashboard-grid{ grid-template-columns:1fr; }
+  .tab-button{ font-size:11px; padding:10px }
+}
