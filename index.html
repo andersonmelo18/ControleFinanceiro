@@ -9,75 +9,42 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-    <script type="module">
-      import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-      import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-      import { getFirestore, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
 
-      // CONFIGURAÇÃO DE FALLBACK/OBRIGATÓRIA (Usando o config original do usuário)
-      const FALLBACK_CONFIG = {
-          apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
-          authDomain: "controle-financeiro-b7880.firebaseapp.com",
-          databaseURL: "https://controle-financeiro-b7880-default-rtdb.firebaseio.com",
-          projectId: "controle-financeiro-b7880",
-          storageBucket: "controle-financeiro-b7880.firebasestorage.app",
-          messagingSenderId: "149823899793",
-          appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
-      };
-      
-      // TENTA USAR A CONFIGURAÇÃO DO AMBIENTE, SENÃO USA O FALLBACK
-      let firebaseConfig = FALLBACK_CONFIG;
-      let initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+    <script>
+        // Configuração de fallback/obrigatória (usando o config original do usuário)
+        const FALLBACK_CONFIG = {
+            apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
+            authDomain: "controle-financeiro-b7880.firebaseapp.com",
+            databaseURL: "https://controle-financeiro-b7880-default-rtdb.firebaseio.com",
+            projectId: "controle-financeiro-b7880",
+            storageBucket: "controle-financeiro-b7880.firebasestorage.app",
+            messagingSenderId: "149823899793",
+            appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
+        };
 
-      if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-          try {
-              const envConfig = JSON.parse(__firebase_config);
-              firebaseConfig = { ...FALLBACK_CONFIG, ...envConfig };
-          } catch (e) {
-              console.warn("Erro ao parsear __firebase_config. Usando FALLBACK_CONFIG.", e);
-          }
-      }
+        let finalConfig = FALLBACK_CONFIG;
 
-      // 1. Inicializar Firebase
-      try {
-          const app = initializeApp(firebaseConfig);
-          
-          // 2. Inicializar Serviços e expor globalmente
-          window.db = getFirestore(app);
-          window.auth = getAuth(app);
-          setLogLevel('debug'); 
+        // TENTA USAR A CONFIGURAÇÃO DO AMBIENTE, SENÃO USA O FALLBACK (Garante projectId)
+        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+            try {
+                const envConfig = JSON.parse(__firebase_config);
+                finalConfig = { ...FALLBACK_CONFIG, ...envConfig };
+            } catch (e) {
+                console.warn("Erro ao parsear __firebase_config. Usando FALLBACK_CONFIG.");
+            }
+        }
 
-          // 3. Autenticação
-          async function authenticate() {
-              let userCredential;
-              if (initialAuthToken) {
-                  userCredential = await signInWithCustomToken(window.auth, initialAuthToken);
-              } else {
-                  userCredential = await signInAnonymously(window.auth);
-              }
-              window.currentUserId = userCredential.user.uid; 
-              
-              const userIdDisplay = document.getElementById('user-id-display');
-              if (userIdDisplay) userIdDisplay.textContent = window.currentUserId;
-          }
-          
-          authenticate().catch(error => {
-              console.error("Erro final na autenticação do Firebase:", error);
-              const userIdDisplay = document.getElementById('user-id-display');
-              if (userIdDisplay) userIdDisplay.textContent = 'Erro de Auth';
-              window.currentUserId = null;
-          });
-
-      } catch (error) {
-          console.error("Erro ao inicializar o Firebase. Verifique a configuração.", error);
-          document.addEventListener('DOMContentLoaded', () => {
-              const userIdDisplay = document.getElementById('user-id-display');
-              if (userIdDisplay) userIdDisplay.textContent = 'Erro de Inicialização';
-          });
-      }
+        try {
+            // Inicializa o Firebase e expõe 'db' globalmente para o script.js
+            const app = firebase.initializeApp(finalConfig);
+            window.db = app.database(); // 'db' exposto como global (window.db)
+            console.log("Firebase Realtime Database inicializado.");
+        } catch (error) {
+            console.error("Erro ao inicializar o Firebase. Verifique a configuração.", error);
+        }
     </script>
-    
-    <script type="module" src="script.js"></script>
 </head>
 <body>
     <div class="container">
@@ -89,49 +56,42 @@
             <a href="cartoes.html"><button class="tab-button">💳 Cartões</button></a>
         </div>
 
-        <div class="header-section">
-            <h1 style="margin-bottom:0;">Painel de Controle Mensal</h1>
-            <p style="margin-top:0;">Usuário: <span style="font-size:10px; color:var(--cor-destaque); font-family:monospace; margin-left:4px;">UID: <span id="user-id-display">Carregando...</span></span></p>
-
+        <div id="dashboard-tab" class="tab-content" style="display:block">
             <div class="month-selector">
-                <button onclick="changeMonth(-1)">&lt; Mês Anterior</button>
-                <span id="current-month-display" class="month-label">Carregando...</span>
-                <button onclick="changeMonth(1)">Próximo Mês &gt;</button>
-            </div>
-        </div>
-        
-        <div class="dashboard-grid">
-            <div id="total-entradas" class="card">
-                <h4>Total Entradas (Mês)</h4>
-                <p class="value">R$ 0,00</p>
-            </div>
-            <div id="total-despesas" class="card">
-                <h4>Total Despesas (Mês)</h4>
-                <p class="value">R$ 0,00</p>
-            </div>
-            <div id="lucro-liquido" class="card">
-                <h4>Lucro Líquido</h4>
-                <p class="value">R$ 0,00</p>
-            </div>
-            <div id="saldo-caixa" class="card">
-                <h4>Saldo em Caixa (Dinheiro/PIX)</h4>
-                <p class="value">R$ 0,00</p>
+                <button onclick="changeMonth(-1)">&#9664;</button>
+                <h2 id="current-month-display"></h2>
+                <button onclick="changeMonth(1)">&#9654;</button>
             </div>
 
-            <div class="card">
-                <h4>🏁 Totais Operacionais</h4>
-                <div class="card-item"><span>Km Total Rodado</span><span id="total-km" style="font-weight:bold;">0.0 km</span></div>
-                <div class="card-item"><span>Horas Trabalhadas</span><span id="total-hours" style="font-weight:bold;">0.0 h</span></div>
+            <div class="dashboard-grid">
+                <div id="total-entradas" class="card">
+                    <h4>⬆️ Total Entradas</h4>
+                    <div class="value">R$ 0,00</div>
+                </div>
+                <div id="total-despesas" class="card">
+                    <h4>⬇️ Total Despesas</h4>
+                    <div class="value">R$ 0,00</div>
+                </div>
+                <div id="lucro-liquido" class="card full-width">
+                    <h4>🎯 Lucro Líquido</h4>
+                    <div class="value">R$ 0,00</div>
+                </div>
+                <div id="saldo-caixa" class="card full-width">
+                    <h4>🗃️ Saldo em Caixa (Dinheiro/PIX)</h4>
+                    <div class="value">R$ 0,00</div>
+                    <p class="small" style="margin:5px 0 0"></p>
+                </div>
+                <div class="card">
+                    <h4>Km Total</h4>
+                    <div id="total-km" class="value">0 km</div>
+                </div>
+                <div class="card">
+                    <h4>Horas Total</h4>
+                    <div id="total-hours" class="value">0 h</div>
+                </div>
             </div>
 
-            <div class="card">
-                <h4>💳 Total Faturas a Pagar</h4>
-                <p id="total-faturas-display" class="value" style="color:var(--cor-erro);">R$ 0,00</p>
-            </div>
-        </div>
-
-        <div class="dashboard-grid">
-            <div class="card" style="grid-column: span 2;">
+            <div class="card-control-section">
                 <h3>📌 Detalhamento de Despesas (Geral)</h3>
                 <div class="card-item"><span>Despesas Variáveis</span><span id="var-exp-value" style="font-weight:bold;color:var(--cor-erro)">R$ 0,00</span></div>
                 <div class="card-item"><span>Despesas Fixas e Dívidas</span><span id="fix-exp-value" style="font-weight:bold;color:var(--cor-erro)">R$ 0,00</span></div>
@@ -159,6 +119,9 @@
                 </div>
             </div>
         </div>
+
     </div>
+
+    <script src="script.js"></script>
 </body>
 </html>

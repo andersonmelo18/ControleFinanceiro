@@ -5,58 +5,36 @@
   <title>Fixos / Dívidas — Controle Financeiro</title>
   <link rel="stylesheet" href="style.css">
   
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+  <script>
+      const FALLBACK_CONFIG = {
+          apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
+          authDomain: "controle-financeiro-b7880.firebaseapp.com",
+          databaseURL: "https://controle-financeiro-b7880-default-rtdb.firebaseio.com",
+          projectId: "controle-financeiro-b7880",
+          storageBucket: "controle-financeiro-b7880.firebasestorage.app",
+          messagingSenderId: "149823899793",
+          appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
+      };
 
-    const FALLBACK_CONFIG = {
-        apiKey: "AIzaSyBXCMMXEM-e_BNftJNcm6XeEGZ7KYPUiAY",
-        authDomain: "controle-financeiro-b7880.firebaseapp.com",
-        databaseURL: "https://controle-financeiro-b7880-default-rtdb.firebaseio.com",
-        projectId: "controle-financeiro-b7880",
-        storageBucket: "controle-financeiro-b7880.firebasestorage.app",
-        messagingSenderId: "149823899793",
-        appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
-    };
-    
-    let firebaseConfig = FALLBACK_CONFIG;
-    let initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+      let finalConfig = FALLBACK_CONFIG;
+      if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+          try {
+              const envConfig = JSON.parse(__firebase_config);
+              finalConfig = { ...FALLBACK_CONFIG, ...envConfig };
+          } catch (e) {
+              console.warn("Erro ao parsear __firebase_config. Usando FALLBACK_CONFIG.");
+          }
+      }
 
-    if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-        try {
-            const envConfig = JSON.parse(__firebase_config);
-            firebaseConfig = { ...FALLBACK_CONFIG, ...envConfig };
-        } catch (e) {
-            console.warn("Erro ao parsear __firebase_config. Usando FALLBACK_CONFIG.", e);
-        }
-    }
-
-    try {
-        const app = initializeApp(firebaseConfig);
-        window.db = getFirestore(app);
-        window.auth = getAuth(app);
-        setLogLevel('debug'); 
-
-        async function authenticate() {
-            let userCredential;
-            if (initialAuthToken) {
-                userCredential = await signInWithCustomToken(window.auth, initialAuthToken);
-            } else {
-                userCredential = await signInAnonymously(window.auth);
-            }
-            window.currentUserId = userCredential.user.uid; 
-        }
-        authenticate().catch(error => {
-            console.error("Erro final na autenticação do Firebase:", error);
-            window.currentUserId = null;
-        });
-
-    } catch (error) {
-        console.error("Erro ao inicializar o Firebase. Verifique a configuração.", error);
-    }
+      try {
+          const app = firebase.initializeApp(finalConfig);
+          window.db = app.database();
+      } catch (error) {
+          console.error("Erro ao inicializar o Firebase.", error);
+      }
   </script>
-  <script type="module" src="script.js"></script>
 </head>
 <body>
   <div class="container">
@@ -74,16 +52,16 @@
 
       <form id="fixed-expense-form">
         <div class="form-group">
-          <label for="fixed-expense-description">Descrição da Despesa</label>
-          <input type="text" id="fixed-expense-description" required>
+          <label for="fixed-expense-payment">Forma de Pagamento</label>
+          <select id="fixed-expense-payment" required></select>
         </div>
         <div class="form-group">
           <label for="fixed-expense-category">Categoria</label>
           <select id="fixed-expense-category" required></select>
         </div>
         <div class="form-group">
-          <label for="fixed-expense-payment">Forma de Pagamento</label>
-          <select id="fixed-expense-payment" required></select>
+          <label for="fixed-expense-description">Descrição</label>
+          <input type="text" id="fixed-expense-description" required>
         </div>
         <div class="form-group">
           <label for="fixed-expense-value">Valor (R$)</label>
@@ -110,7 +88,7 @@
 
       <div class="log-table-container">
         <h3>Resumo de Despesas Fixas do Mês (<span id="current-month-log-display"></span>)</h3>
-        <p style="font-size:12px; color:var(--cor-destaque)">* Clique no valor para editá-lo apenas para o mês atual, mantendo a projeção original.</p>
+        <p style="font-size:12px; color:var(--cor-destaque)">*</p>
         <table class="log-table">
           <thead>
             <tr><th>Descrição/Parcela</th><th>Valor</th><th>Forma</th><th>Ação</th></tr>
@@ -121,5 +99,6 @@
     </div>
   </div>
 
+  <script src="script.js"></script>
 </body>
 </html>
