@@ -9,8 +9,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-        <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
 
     <script>
       const firebaseConfig = {
@@ -29,13 +29,21 @@
     </script>
 </head>
 <body>
-    <div id="auth-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:100; display:flex; justify-content:center; align-items:center;">
-        <div style="max-width:300px; padding: 20px; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
-            <div id="auth-section">
-                </div>
+    <div id="auth-overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:100; display:flex; justify-content:center; align-items:center;">
+        <div style="max-width:300px; padding: 20px; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+            <div id="auth-section">
+                </div>
+        </div>
+    </div>
+        <div class="container" style="display: none;"> 
+        
+        <!-- NOVO CABEÇALHO ADICIONADO AQUI -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px; padding-top: 10px; border-bottom: 1px solid #333;">
+            <h1 id="user-display" style="font-size: 16px; margin: 0; color: var(--cor-destaque); font-weight: 500;">Carregando Usuário...</h1>
+            <button class="submit-btn" onclick="handleLogout()" style="padding: 5px 10px; font-size: 12px; background-color: var(--cor-erro);">Sair (Logout)</button>
         </div>
-    </div>
-        <div class="container" style="display: none;"> 
+        <!-- FIM DO NOVO CABEÇALHO -->
+        
         <div class="nav-tabs">
             <a href="index.html"><button class="tab-button active">🏠 Painel</button></a>
             <a href="entradas.html"><button class="tab-button">➡️ Entradas</button></a>
@@ -52,7 +60,7 @@
             </div>
 
             <div class="dashboard-grid">
-                                <div id="total-entradas" class="card">
+                                <div id="total-entradas" class="card">
                     <h4>⬆️ Total Entradas</h4>
                     <div class="value">R$ 0,00</div>
                 </div>
