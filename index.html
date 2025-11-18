@@ -21,10 +21,9 @@
         messagingSenderId: "149823899793",
         appId: "1:149823899793:web:0fcdcd8ece6748697e9730"
       };
-
       // Inicializa o Firebase e obtém a referência do DB, tornando 'db' global
       const app = firebase.initializeApp(firebaseConfig);
-      window.db = app.database(); // Usa window.db para garantir acesso global
+      window.db = app.database();
     </script>
 </head>
 <body>
@@ -34,73 +33,77 @@
             <a href="entradas.html"><button class="tab-button">➡️ Entradas</button></a>
             <a href="despesas.html"><button class="tab-button">⬅️ Despesas</button></a>
             <a href="fixos.html"><button class="tab-button">📌 Fixos/Dívidas</button></a>
-            <a href="cartoes.html"><button class="tab-button">💳 Cartões</button></a>
+            <a href="cartoes.html"><button class="tab-button">💳 Fatura Cartões</button></a>
+            <a href="cartoes_specs.html"><button class="tab-button">📑 Specs Cartões</button></a>
+            <a href="investimentos.html"><button class="tab-button">📈 Investimentos</button></a>
+            <a href="pendencias.html"><button class="tab-button">📝 Pendências</button></a>
         </div>
 
-        <div id="dashboard-tab" class="tab-content" style="display:block">
-            <div class="month-selector">
-                <button onclick="changeMonth(-1)">&#9664;</button>
-                <h2 id="current-month-display"></h2>
-                <button onclick="changeMonth(1)">&#9654;</button>
+        <div class="nav-tabs-sticky" id="month-navigation-bar">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <button onclick="changeMonth(-1)" class="submit-btn" style="padding:6px 10px;">&lt; Mês Anterior</button>
+                <h3 id="current-month-display" style="margin:0;">Mês Atual</h3>
+                <button onclick="changeMonth(1)" class="submit-btn" style="padding:6px 10px;">Próximo Mês &gt;</button>
+            </div>
+        </div>
+        
+        <div class="card-grid">
+            <div class="card" id="total-entradas">
+                <h4>Total de Entradas</h4>
+                <p class="card-value value">R$ 0,00</p>
+            </div>
+            <div class="card" id="total-despesas">
+                <h4>Total de Despesas (Diluídas)</h4>
+                <p class="card-value value">R$ 0,00</p>
+                <p class="small" style="font-size:12px;">* Só inclui fixas marcadas como **PAGAS**.</p>
+            </div>
+            <div class="card" id="lucro-liquido">
+                <h4>Lucro Líquido</h4>
+                <p class="card-value value">R$ 0,00</p>
+            </div>
+            <div class="card" id="saldo-caixa">
+                <h4>Saldo Final em Caixa (PIX/Dinheiro)</h4>
+                <p class="card-value value">R$ 0,00</p>
             </div>
 
-            <div class="dashboard-grid">
-                <div id="total-entradas" class="card">
-                    <h4>⬆️ Total Entradas</h4>
-                    <div class="value">R$ 0,00</div>
+            <div class="card" id="monthly-goal-card" style="grid-column: span 2;">
+                <h4>🎯 Meta de Entrada Mensal: <span id="goal-display">R$ 0,00</span></h4>
+                <p class="small">Clique no valor da meta para editar.</p>
+                <button onclick="editMonthlyGoal()" class="submit-btn" style="padding:4px 8px; margin-top:0;">Editar Meta</button>
+                
+                <div class="goal-progress">
+                    <div id="goal-progress-bar" class="progress-bar" style="width:0%">0%</div>
                 </div>
-                <div id="total-despesas" class="card">
-                    <h4>⬇️ Total Despesas</h4>
-                    <div class="value">R$ 0,00</div>
-                </div>
-                <div id="lucro-liquido" class="card full-width">
-                    <h4>🎯 Lucro Líquido</h4>
-                    <div class="value">R$ 0,00</div>
-                </div>
-                <div id="saldo-caixa" class="card full-width">
-                    <h4>🗃️ Saldo em Caixa (Dinheiro/PIX)</h4>
-                    <div class="value">R$ 0,00</div>
-                    <p class="small" style="margin:5px 0 0"></p>
-                </div>
-                <div class="card">
-                    <h4>Km Total</h4>
-                    <div id="total-km" class="value">0 km</div>
-                </div>
-                <div class="card">
-                    <h4>Horas Total</h4>
-                    <div id="total-hours" class="value">0 h</div>
-                </div>
-            </div>
-
-            <div class="card-control-section">
-                <h3>📌 Detalhamento de Despesas (Geral)</h3>
-                <div class="card-item"><span>Despesas Variáveis</span><span id="var-exp-value" style="font-weight:bold;color:var(--cor-erro)">R$ 0,00</span></div>
-                <div class="card-item"><span>Despesas Fixas e Dívidas</span><span id="fix-exp-value" style="font-weight:bold;color:var(--cor-erro)">R$ 0,00</span></div>
-            </div>
-
-            <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
-                <button id="export-csv-btn" class="submit-btn">Exportar CSV (Excel)</button>
-                <button id="export-pdf-btn" class="submit-btn">Exportar PDF</button>
-            </div>
-
-            <div style="display:flex; gap:12px; margin-top:12px; flex-direction:column;">
-                <div class="card" style="min-height:260px;">
-                    <h4>Gráfico — Receitas vs Despesas</h4>
-                    <div style="height:200px;"><canvas id="chart-donut"></canvas></div>
-                </div>
-
-                <div class="card" style="min-height:260px;">
-                    <h4>Gastos por Categoria</h4>
-                    <div style="height:220px"><canvas id="chart-bar"></canvas></div>
-                </div>
-
-                <div class="card">
-                    <h4>Resumo Mensal</h4>
-                    <div id="monthly-summary-table"></div>
-                </div>
+                <p style="font-size:12px; margin-top:8px;">Falta(m): <span id="goal-remaining">R$ 0,00</span></p>
             </div>
         </div>
 
+        <div style="margin-top:12px;">
+            <h3>Detalhamento de Despesas (Geral)</h3>
+            <div class="card-item"><span>Despesas Variáveis</span><span id="var-exp-value" style="font-weight:bold;color:var(--cor-erro)">R$ 0,00</span></div>
+            <div class="card-item"><span>Despesas Fixas e Dívidas (Total Projetado)</span><span id="fix-exp-value" style="font-weight:bold;color:var(--cor-erro)">R$ 0,00</span></div>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
+            <button id="export-csv-btn" class="submit-btn">Exportar CSV (Excel)</button>
+            <button id="export-pdf-btn" class="submit-btn">Exportar PDF</button>
+        </div>
+
+        <div style="display:flex; gap:12px; margin-top:12px; flex-direction:column;">
+            <div class="card" style="min-height:260px;">
+                <h4>Gráfico — Receitas vs Despesas</h4>
+                <div style="height:200px;"><canvas id="chart-donut"></canvas></div>
+            </div>
+
+            <div class="card" style="min-height:260px;">
+                <h4>Gastos por Categoria</h4>
+                <div style="height:220px"><canvas id="chart-bar"></canvas></div>
+            </div>
+
+            <div class="card" id="monthly-summary-table">
+                <h4>Resumo Financeiro Mensal</h4>
+                </div>
+        </div>
     </div>
 
     <script src="script.js"></script>

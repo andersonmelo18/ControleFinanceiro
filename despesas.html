@@ -25,11 +25,14 @@
 <body>
   <div class="container">
     <div class="nav-tabs">
-      <a href="index.html"><button class="tab-button">🏠 Painel</button></a>
-      <a href="entradas.html"><button class="tab-button">➡️ Entradas</button></a>
-      <a href="despesas.html"><button class="tab-button active">⬅️ Despesas Variáveis</button></a>
-      <a href="fixos.html"><button class="tab-button">📌 Fixos/Dívidas</button></a>
-      <a href="cartoes.html"><button class="tab-button">💳 Cartões</button></a>
+        <a href="index.html"><button class="tab-button">🏠 Painel</button></a>
+        <a href="entradas.html"><button class="tab-button">➡️ Entradas</button></a>
+        <a href="despesas.html"><button class="tab-button active">⬅️ Despesas</button></a>
+        <a href="fixos.html"><button class="tab-button">📌 Fixos/Dívidas</button></a>
+        <a href="cartoes.html"><button class="tab-button">💳 Fatura Cartões</button></a>
+        <a href="cartoes_specs.html"><button class="tab-button">📑 Specs Cartões</button></a>
+        <a href="investimentos.html"><button class="tab-button">📈 Investimentos</button></a>
+        <a href="pendencias.html"><button class="tab-button">📝 Pendências</button></a>
     </div>
 
     <div id="expenses-tab" class="tab-content" style="display:block; margin-top:12px;">
@@ -62,7 +65,7 @@
         <h3>Histórico de Despesas Variáveis</h3>
         <table class="log-table">
           <thead>
-            <tr><th>Data</th><th>Categoria</th><th>Valor</th><th>Forma</th><th></th></tr>
+            <tr><th>Data</th><th>Categoria</th><th>Valor</th><th>Forma</th><th>Ação</th></tr>
           </thead>
           <tbody id="expenses-log-body"></tbody>
         </table>
